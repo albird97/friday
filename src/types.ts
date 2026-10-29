@@ -33,4 +33,8 @@ export interface Outbox {
   isOnWhatsApp?(number: string): Promise<boolean | undefined>;
   /** Replaces the bot's own profile picture (WhatsApp only). */
   setProfilePicture?(image: Buffer): Promise<void>;
+  /** Sends a poll; returns its message id and the secret its votes are encrypted with (WhatsApp only). */
+  sendPoll?(chatId: string, poll: { question: string; options: string[]; multiple: boolean }): Promise<{ messageId: string; secret: Buffer }>;
+  /** How many people besides the bot are in a group; undefined when unknown. */
+  groupSize?(chatId: string): Promise<number | undefined>;
 }

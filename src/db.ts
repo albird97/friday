@@ -99,6 +99,24 @@ db.exec(`
     key  TEXT NOT NULL,
     PRIMARY KEY (day, key)
   );
+  CREATE TABLE IF NOT EXISTS polls (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    msg_id      TEXT NOT NULL UNIQUE,
+    chat_id     TEXT NOT NULL,
+    question    TEXT NOT NULL,
+    options     TEXT NOT NULL,
+    secret      TEXT NOT NULL,
+    created_by  TEXT NOT NULL,
+    created_at  INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS poll_votes (
+    poll_id     INTEGER NOT NULL,
+    voter       TEXT NOT NULL,
+    name        TEXT,
+    choices     TEXT NOT NULL,
+    updated_at  INTEGER NOT NULL,
+    PRIMARY KEY (poll_id, voter)
+  );
   CREATE TABLE IF NOT EXISTS errand_notes (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     requester_chat  TEXT NOT NULL,

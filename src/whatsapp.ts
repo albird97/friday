@@ -1,6 +1,8 @@
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import makeWASocket, {
   Browsers,
+  decryptPollVote,
   DisconnectReason,
   downloadMediaMessage,
   fetchLatestBaileysVersion,
@@ -11,6 +13,7 @@ import makeWASocket, {
   jidNormalizedUser,
   makeCacheableSignalKeyStore,
   normalizeMessageContent,
+  sha256,
   useMultiFileAuthState,
   type WAMessage,
   type WAMessageContent,
@@ -21,6 +24,7 @@ import qrcode from "qrcode-terminal";
 import type { Incoming, Media } from "./bot.js";
 import { config } from "./config.js";
 import { contactByNumber, isAdmin } from "./contacts.js";
+import { pollByMessage, recordVote, type Poll } from "./polls.js";
 import { loadSession } from "./session.js";
 import type { Outbox } from "./types.js";
 
@@ -40,6 +44,34 @@ function textOf(content: WAMessageContent | undefined): string {
     content?.documentMessage?.caption ??
     ""
   );
+}
+
+/**
+ * The options someone chose in one of our polls, or undefined if the vote can't be read. A vote is encrypted for the
+ * poll's and the voter's ids, and WhatsApp may use either a phone-number id or a LID for each, so every pair is tried.
+ */
+export function readVote(
+  vote: { encPayload?: Uint8Array | null; encIv?: Uint8Array | null },
+  poll: Poll,
+  creatorIds: string[],
+  voterIds: string[],
+): string[] | undefined {
+  if (!vote.encPayload || !vote.encIv) return undefined;
+  for (const pollCreatorJid of creatorIds) {
+    for (const voterJid of voterIds) {
+      try {
+        const { selectedOptions } = decryptPollVote(
+          { encPayload: vote.encPayload, encIv: vote.encIv },
+          { pollCreatorJid, pollMsgId: poll.msg_id, pollEncKey: poll.secret, voterJid },
+        );
+        const chosen = (selectedOptions ?? []).map((hash) => Buffer.from(hash));
+        return poll.options.filter((option) => chosen.some((hash) => hash.equals(sha256(Buffer.from(option)))));
+      } catch {
+        // wrong pair of ids: the decryption check fails, try the next
+      }
+    }
+  }
+  return undefined;
 }
 
 /** Connects to WhatsApp as a linked device and feeds incoming messages to `onMessage`. */
@@ -67,6 +99,18 @@ export async function startWhatsApp(onMessage: (msg: Incoming, outbox: Outbox) =
     },
     async setProfilePicture(image) {
       await sock.updateProfilePicture(jidNormalizedUser(sock.user!.id), image);
+    },
+    async sendPoll(chatId, poll) {
+      const secret = randomBytes(32);
+      const sent = await sock.sendMessage(chatId, {
+        poll: { name: poll.question, values: poll.options, selectableCount: poll.multiple ? 0 : 1, messageSecret: secret },
+      });
+      if (!sent?.key.id) throw new Error("WhatsApp didn't accept the poll.");
+      return { messageId: sent.key.id, secret };
+    },
+    async groupSize(chatId) {
+      const meta = await sock.groupMetadata(chatId).catch(() => undefined);
+      return meta ? meta.participants.length - 1 : undefined;
     },
   };
 
@@ -107,6 +151,27 @@ export async function startWhatsApp(onMessage: (msg: Incoming, outbox: Outbox) =
       size: m!.fileLength ? Number(m!.fileLength) : undefined,
       download: () => downloadMediaMessage(message, "buffer", {}, { logger, reuploadRequest: sock.updateMediaMessage }),
     };
+  }
+
+  /** A vote in one of our polls: stored without involving Claude (or answering it). */
+  async function saveVote(m: WAMessage, update: NonNullable<WAMessageContent["pollUpdateMessage"]>): Promise<void> {
+    const poll = update.pollCreationMessageKey?.id ? pollByMessage(update.pollCreationMessageKey.id) : undefined;
+    const chatId = m.key.remoteJid;
+    if (!poll || !update.vote || !chatId || poll.chat_id !== chatId) return;
+    const isGroup = !!isJidGroup(chatId);
+    const ids = (jids: (string | null | undefined)[]) => [...new Set(jids.filter((j): j is string => !!j).map((j) => jidNormalizedUser(j)))];
+    const choices = readVote(
+      update.vote,
+      poll,
+      ids([sock.user?.id, sock.user?.lid]),
+      ids(isGroup ? [m.key.participant, m.key.participantAlt] : [m.key.remoteJid, m.key.remoteJidAlt]),
+    );
+    if (!choices) {
+      console.error(`Couldn't read a vote in poll #${poll.id}`);
+      return;
+    }
+    const number = await phoneNumberOf(isGroup ? (m.key.participant ?? "") : chatId, isGroup ? m.key.participantAlt : m.key.remoteJidAlt);
+    recordVote(poll.id, number, m.pushName ?? undefined, choices);
   }
 
   async function toIncoming(m: WAMessage): Promise<Incoming | undefined> {
@@ -227,6 +292,11 @@ export async function startWhatsApp(onMessage: (msg: Incoming, outbox: Outbox) =
     current.ev.on("messages.upsert", ({ messages, type }) => {
       if (type !== "notify") return;
       for (const m of messages) {
+        const vote = m.key.fromMe ? undefined : normalizeMessageContent(m.message)?.pollUpdateMessage;
+        if (vote) {
+          saveVote(m, vote).catch((err) => console.error("Couldn't save a poll vote", err));
+          continue;
+        }
         toIncoming(m)
           .then((incoming) => incoming && onMessage(incoming, outbox))
           .catch((err) => console.error("Couldn't read an incoming message", err));

@@ -9,6 +9,7 @@ import { imagesEnabled, loadImage, makeImage, saveImage, type ImageResult } from
 import { errandTools, runErrandTool } from "./errands.js";
 import { addMemory, forgetMemory, SHARED } from "./memory.js";
 import { onehubTools, runOnehubTool } from "./onehub.js";
+import { pollInChat, pollResults, savePoll } from "./polls.js";
 import { cancelReminder, createReminder, describeReminder, listReminders } from "./reminders.js";
 import { formatDateTime } from "./time.js";
 import type { ChatContext, Outbox, OutgoingFile } from "./types.js";
@@ -291,6 +292,41 @@ const BASE_TOOLS: Tool[] = [
       if (target.chatId === ctx.chat.chatId) return "That's this chat; just reply normally.";
       await ctx.outbox.sendText(target.chatId, `📨 *From ${ctx.chat.sender.name}:*\n${text}`);
       return `Sent to ${target.label} at ${formatDateTime(new Date())}.`;
+    },
+  }),
+  tool({
+    name: "create_poll",
+    description:
+      "Send a WhatsApp poll in the current chat, e.g. to see who's coming to a get-together, pick a date or a place. " +
+      "Everyone votes with one tap (they don't need to message you) and can change their vote; read the votes with " +
+      "poll_results. For attendance, put what, when and where in the question and use options like " +
+      '"✅ Ikut", "❌ Gak bisa", "🤔 Belum tahu" (in the chat\'s language).',
+    schema: z.object({
+      question: z.string().min(1).max(255),
+      options: z.array(z.string().min(1).max(100)).min(2).max(12),
+      multiple: z.boolean().default(false).describe("Let people pick more than one option (e.g. which dates suit them)."),
+    }),
+    async run(input, ctx) {
+      requireContact(ctx, "create polls");
+      if (!ctx.outbox.sendPoll) throw new Error("Polls only work on WhatsApp.");
+      const options = [...new Set(input.options.map((o) => o.trim()))];
+      if (options.length < 2) throw new Error("A poll needs at least two different options.");
+      const sent = await ctx.outbox.sendPoll(ctx.chat.chatId, { question: input.question, options, multiple: input.multiple });
+      const id = savePoll({ msgId: sent.messageId, chatId: ctx.chat.chatId, question: input.question, options, secret: sent.secret, createdBy: ctx.chat.sender.number });
+      return `Sent poll #${id}. It's already in the chat, so reply with one short line at most.`;
+    },
+  }),
+  tool({
+    name: "poll_results",
+    description:
+      "Who has voted what in a poll sent in this chat (the latest one unless poll_id is given). Votes are collected " +
+      "automatically; use this when someone asks who's coming, for a recap, or before booking for the group.",
+    schema: z.object({ poll_id: z.number().int().optional() }),
+    async run({ poll_id }, ctx) {
+      const poll = pollInChat(ctx.chat.chatId, poll_id);
+      if (!poll) return poll_id === undefined ? "No poll has been sent in this chat yet." : `No poll #${poll_id} in this chat.`;
+      const members = ctx.chat.isGroup ? await ctx.outbox.groupSize?.(ctx.chat.chatId) : undefined;
+      return pollResults(poll, members);
     },
   }),
 ];

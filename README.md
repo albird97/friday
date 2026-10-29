@@ -99,6 +99,7 @@ Things to try:
 - *(reply to a photo in a group)* "@Friday what plant is this?"
 - "Remember that Sarah is allergic to peanuts"
 - "Tell Sarah I'll be home at 8"
+- *(in a group)* "@Friday see who can come to dinner on Saturday at 7" — sends a poll; later "@Friday who's coming?"
 
 ### Commands
 
