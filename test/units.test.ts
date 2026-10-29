@@ -1,5 +1,6 @@
 import { ADMIN } from "./setup.js";
 import assert from "node:assert/strict";
+import { createRequire } from "node:module";
 import { describe, it } from "node:test";
 import { addContact, allContacts, findContact, removeContact, takeDailyQuota } from "../src/contacts.js";
 import { markdownToDocx } from "../src/docs/docx.js";
@@ -9,6 +10,7 @@ import { sheetsToXlsx, sheetToCsv } from "../src/docs/sheets.js";
 import { slidesToPptx } from "../src/docs/slides.js";
 import { chunk, toWhatsApp } from "../src/format.js";
 import { outputSize } from "../src/images.js";
+import { hideSignalSessionDumps } from "../src/logging.js";
 import { addMemory, forgetMemory, memoriesFor, SHARED } from "../src/memory.js";
 import { createReminder, fireDueReminders, listReminders, nextRun } from "../src/reminders.js";
 import { isStale, recapOf } from "../src/session.js";
@@ -141,5 +143,26 @@ describe("tools", () => {
     assert.deepEqual(outputSize("1:1"), { width: 1024, height: 1024 });
     assert.deepEqual(outputSize("16:9"), { width: 1360, height: 768 });
     assert.deepEqual(outputSize(undefined, { width: 3000, height: 4000 }), { width: 880, height: 1184 });
+  });
+});
+
+describe("logging", () => {
+  it("drops libsignal's session dumps (they contain keys) but keeps other output", () => {
+    const seen: unknown[][] = [];
+    const saved = { info: console.info, warn: console.warn };
+    console.info = console.warn = (...args: unknown[]) => void seen.push(args);
+    try {
+      hideSignalSessionDumps();
+      const { SessionRecord } = createRequire(import.meta.url)("libsignal");
+      const record = new SessionRecord();
+      const session = { indexInfo: { closed: -1 }, currentRatchet: { rootKey: Buffer.from("secret") } };
+      record.closeSession(session);
+      record.closeSession(session); // "Session already closed"
+      record.openSession(session);
+      console.warn("something else");
+    } finally {
+      Object.assign(console, saved);
+    }
+    assert.deepEqual(seen, [["something else"]]);
   });
 });

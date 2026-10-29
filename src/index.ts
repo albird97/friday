@@ -1,8 +1,11 @@
 import { handleIncoming } from "./bot.js";
 import { config } from "./config.js";
 import { imageProvider, pruneImages } from "./images.js";
+import { hideSignalSessionDumps } from "./logging.js";
 import { startReminderLoop } from "./reminders.js";
 import { startWhatsApp } from "./whatsapp.js";
+
+hideSignalSessionDumps();
 
 if (!process.env.ANTHROPIC_API_KEY) {
   console.error("ANTHROPIC_API_KEY is missing. Copy .env.example to .env and paste your Claude API key into it.");
