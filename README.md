@@ -8,7 +8,8 @@ and it can:
 - ⏰ **Set reminders** — one-off ("at 5pm") or repeating ("every weekday at 8"), for you or someone else
 - 📄 **Make documents** and send them as files: PDF, Word, Excel, CSV, PowerPoint
 - 🎨 **Create and edit pictures** — "draw a birthday card", or send a photo and say "make the background a beach"
-- 👀 **Read photos, PDFs and text files** you send
+- 👀 **Read photos, PDFs and text files** you send, and **understand voice notes** (transcribed for free with Cloudflare;
+  Friday answers in text)
 - 🧠 **Remember things** you tell it (birthdays, preferences) across conversations
 - 📨 **Pass messages** to other people ("tell Sarah I'll be late")
 

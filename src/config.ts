@@ -11,6 +11,8 @@ const Env = z.object({
   CLOUDFLARE_ACCOUNT_ID: z.string().default(""),
   CLOUDFLARE_API_TOKEN: z.string().default(""),
   CLOUDFLARE_IMAGE_MODEL: z.string().default("@cf/black-forest-labs/flux-2-klein-4b"),
+  // Voice notes are transcribed with this Workers AI model (same Cloudflare account and free allowance).
+  CLOUDFLARE_STT_MODEL: z.string().default("@cf/openai/whisper-large-v3-turbo"),
   GEMINI_API_KEY: z.string().default(""),
   GEMINI_IMAGE_MODEL: z.string().default("gemini-nano-banana-2.1"),
   FRIDAY_MODEL: z.string().default("claude-opus-5-5"),

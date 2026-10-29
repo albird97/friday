@@ -28,6 +28,11 @@ const cloudflareCalls: FormData[] = [];
 const realFetch = globalThis.fetch;
 const generated = await sharp({ create: { width: 64, height: 64, channels: 3, background: "blue" } }).png().toBuffer();
 globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+  if (String(url).includes("api.cloudflare.com") && String(url).includes("whisper")) {
+    const { audio } = JSON.parse(String(init?.body));
+    const text = Buffer.from(audio, "base64").toString() === "voice" ? "Tolong ingatkan beli oli besok jam 7" : "";
+    return new Response(JSON.stringify({ success: true, result: { text } }), { headers: { "content-type": "application/json" } });
+  }
   if (String(url).includes("api.cloudflare.com")) {
     cloudflareCalls.push(init?.body as FormData);
     return new Response(JSON.stringify({ success: true, result: { image: generated.toString("base64") } }), {
@@ -179,5 +184,21 @@ describe("failures", () => {
     await handleIncoming(dm(WIFE, "something disallowed"), outbox);
     assert.match(sent[0].text!, /can't help with that/);
     assert.equal((db.prepare("SELECT messages FROM sessions WHERE chat_id = ?").get(chatId) as { messages: string }).messages, before);
+  });
+});
+
+describe("voice notes", () => {
+  it("are transcribed and reach Claude as text", async () => {
+    claude.replies.push({ content: [text("Siap, besok jam 7 saya ingatkan.")], stop_reason: "end_turn" });
+    const voice: Media = { kind: "audio", mimetype: "audio/ogg; codecs=opus", size: 5, download: async () => Buffer.from("voice") };
+    await handleIncoming(dm(ADMIN, "", voice), outbox);
+    assert.match(lastUserText(claude.requests[0].body), /\[Voice note, transcribed automatically \(may contain small mistakes\): "Tolong ingatkan beli oli besok jam 7"\]/);
+  });
+
+  it("say so when there's no speech", async () => {
+    claude.replies.push({ content: [text("Saya tidak menangkap suaranya.")], stop_reason: "end_turn" });
+    const silent: Media = { kind: "audio", mimetype: "audio/ogg", size: 5, download: async () => Buffer.from("...") };
+    await handleIncoming(dm(ADMIN, "", silent), outbox);
+    assert.match(lastUserText(claude.requests[0].body), /no recognisable speech/);
   });
 });

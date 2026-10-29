@@ -7,6 +7,7 @@ import { imagesEnabled, saveImage } from "./images.js";
 import { confirmErrand, errandFor, errandIncoming, errandNotes } from "./errands.js";
 import { actionNotes, confirmAction } from "./onehub.js";
 import { deleteSession } from "./session.js";
+import { MAX_VOICE_BYTES, transcribe, transcriptionEnabled } from "./transcribe.js";
 import { usageReport } from "./usage.js";
 import { nowStamp } from "./time.js";
 import type { ChatContext, Outbox } from "./types.js";
@@ -94,7 +95,7 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
       await reply(
         [
           `*${config.BOT_NAME}* — just talk to me normally${chat.isGroup ? ` (mention me, reply to me, or start with "${config.BOT_NAME},")` : ""}.`,
-          `I can answer questions, search the web, set reminders, read photos and PDFs, make PDF / Word / Excel / PowerPoint files${imagesEnabled ? ", and create or edit pictures" : ""}.`,
+          `I can answer questions, search the web, set reminders, read photos and PDFs${transcriptionEnabled ? ", understand voice notes" : ""}, make PDF / Word / Excel / PowerPoint files${imagesEnabled ? ", and create or edit pictures" : ""}.`,
           "",
           "/reset — start a fresh conversation (keeps memories and reminders)",
           "/id — show this chat's id and your number",
@@ -162,6 +163,20 @@ async function readableImage(mimetype: string, data: Buffer): Promise<{ mimetype
   }
 }
 
+/** A voice note as a line Claude can read: its transcript, or why there isn't one. */
+async function voiceNote(media: Media): Promise<string> {
+  if (!transcriptionEnabled) return "[They sent a voice note, which you can't listen to (transcription isn't set up). Ask them to type it.]";
+  if ((media.size ?? 0) > MAX_VOICE_BYTES) return "[They sent a voice note that's too long to transcribe. Ask them to send it in shorter parts or type it.]";
+  try {
+    const text = await transcribe(await media.download());
+    return text
+      ? `[Voice note, transcribed automatically (may contain small mistakes): "${text}"]`
+      : "[They sent a voice note with no recognisable speech.]";
+  } catch (err) {
+    return `[They sent a voice note that couldn't be transcribed: ${err instanceof Error ? err.message : err} Ask them to type it.]`;
+  }
+}
+
 /** Builds Claude's user turn: attachments first, then the stamped text. */
 async function toContent(msg: Incoming): Promise<BetaContentBlockParam[] | undefined> {
   const blocks: BetaContentBlockParam[] = [];
@@ -170,7 +185,7 @@ async function toContent(msg: Incoming): Promise<BetaContentBlockParam[] | undef
 
   if (media) {
     const name = media.fileName ? ` "${media.fileName}"` : "";
-    if (media.kind === "audio") notes.push("[They sent a voice note/audio, which you can't listen to.]");
+    if (media.kind === "audio") notes.push(await voiceNote(media));
     else if (media.kind === "video") notes.push("[They sent a video, which you can't watch.]");
     else if ((media.size ?? 0) > MAX_FILE_BYTES) notes.push(`[They sent a file${name} that's too large for you to open (over 20 MB).]`);
     else if (media.kind === "image" || media.kind === "sticker") {
