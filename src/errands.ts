@@ -84,6 +84,10 @@ async function startErrand(input: z.infer<typeof StartInput>, chat: ChatContext,
   if (today.n >= config.ERRAND_DAILY_LIMIT) {
     throw new Error(`The limit of ${config.ERRAND_DAILY_LIMIT} new errands a day is reached (it protects the bot's number from being flagged as spam).`);
   }
+  // Numbers found online are often landlines; catch that before asking anyone to confirm.
+  if ((await outbox.isOnWhatsApp?.(number)) === false) {
+    throw new Error(`+${number} isn't on WhatsApp (often a landline). Look for their WhatsApp number instead, e.g. on their Instagram bio, Linktree or Google Maps listing.`);
+  }
 
   const code = String(randomInt(1000, 10_000));
   const now = Date.now();
@@ -98,9 +102,11 @@ async function startErrand(input: z.infer<typeof StartInput>, chat: ChatContext,
   // Sent by code, not by Claude, so the person confirms exactly what goes out and to whom.
   await outbox.sendText(
     chat.chatId,
-    `📤 *Kirim pesan ke ${input.to_name} (+${number})?*\nTujuan: ${input.goal}\n\nPesan pertama:\n${input.first_message}\n\n` +
-      `Balas *YA ${code}* dalam ${CONFIRM_MINUTES} menit untuk mengirim. Setelah itu saya membalas pesan mereka sendiri sesuai ` +
-      "tujuan ini, menanyakan hal di luar itu ke sini dulu, dan meneruskan semua percakapannya ke chat ini.",
+    `📤 *Kirim pesan ke ${input.to_name} (+${number})?*\n` +
+      (input.number_source ? `Nomor dari: ${input.number_source}\n` : "") +
+      `Tujuan: ${input.goal}\n\nPesan pertama (atas nama ${chat.sender.name}):\n${input.first_message}\n\n` +
+      `Balas *YA ${code}* dalam ${CONFIRM_MINUTES} menit untuk mengirim. Setelah itu saya membalas pesan mereka atas nama ` +
+      `${chat.sender.name} sesuai tujuan ini, menanyakan hal di luar itu ke sini dulu, dan meneruskan semua percakapannya ke chat ini.`,
   );
   return (
     `Errand #${lastInsertRowid} is waiting for the person's confirmation code; nothing has been sent yet. Don't repeat the ` +
@@ -137,8 +143,8 @@ export async function confirmErrand(chat: ChatContext, text: string, outbox: Out
 function errandSystem(e: Errand): string {
   const them = e.target_name;
   const boss = e.requester_name;
-  return `You are ${config.BOT_NAME}, a WhatsApp assistant. You are messaging ${them} (+${e.target_number}) on behalf of \
-${boss}, who asked you to handle this:
+  return `You are ${config.BOT_NAME}, ${boss}'s WhatsApp assistant. You are messaging ${them} (+${e.target_number}) in \
+${boss}'s name, to handle this for ${boss}:
 
 ${e.goal}
 
@@ -153,7 +159,10 @@ headers, no notes to yourself. Plain text; WhatsApp *bold* at most.
 - ${boss} sees everything said both ways.
 
 # Rules
-- You are ${boss}'s assistant, not ${boss}. Say so if asked; never claim to be a human.
+- Write as ${boss}, in the first person, the way ${boss} would text (e.g. "Halo, saya ${boss}…"). Don't mention an \
+assistant, a bot or AI.
+- One exception: if they sincerely ask whether they're chatting with a bot, an AI or an assistant, don't deny it. Say \
+you're ${boss}'s assistant arranging this for ${boss}, and carry on if they're fine with it.
 - Share only details given in the task above or later by ${boss}. Never give out any other personal information.
 - Never agree to pay, transfer or deposit money, or to anything different from the task (another date, time, price, \
 place or condition). Call ask_requester, tell ${them} briefly that you'll check, and wait for the answer.
@@ -229,12 +238,19 @@ export async function errandIncoming(errand: Errand, chat: ChatContext, preview:
 
 const StartInput = z.object({
   to_number: z.string().describe("Their WhatsApp number with country code, e.g. 6281234567890."),
+  number_source: z
+    .string()
+    .optional()
+    .describe('Where you found the number, shown to the person so they can check it, e.g. "Instagram @satesenayan (bio)".'),
   to_name: z.string().min(1).describe('Who they are, e.g. "Resto Sate Senayan Kemang".'),
   goal: z
     .string()
     .min(10)
     .describe("What to achieve, plus every detail you may share (date, time, party size, booking name, phone…). Nothing else is shared."),
-  first_message: z.string().min(5).describe("The opening message: polite, short, says you're the person's assistant and what you'd like."),
+  first_message: z
+    .string()
+    .min(5)
+    .describe("The opening message, written as the person in the first person (\"Halo, saya Albert, mau reservasi…\"): polite and short."),
 });
 const ReplyInput = z.object({ errand_id: z.number().int(), message: z.string().min(1).describe("The answer or new instruction.") });
 const EndInput = z.object({ errand_id: z.number().int() });
@@ -243,9 +259,9 @@ const MAIN_TOOLS = [
   {
     name: "start_errand",
     description:
-      "Message someone who isn't a contact (a restaurant, shop, clinic…) on the person's behalf and handle their replies " +
+      "Message someone who isn't a contact (a restaurant, shop, clinic…) in the person's name and handle their replies " +
       "within `goal`. The person must confirm with a code before anything is sent; afterwards every message both ways is " +
-      "mirrored to this chat.",
+      "mirrored to this chat. Numbers that aren't on WhatsApp are refused, so look for their WhatsApp number.",
     schema: StartInput,
   },
   {

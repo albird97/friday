@@ -114,10 +114,13 @@ Things to try:
 People listed in `ERRAND_USERS` can ask Friday, in their private chat, to deal with someone who isn't a contact —
 "book a table for 4 at Sate Senayan on Saturday at 7", "ask this shop if they have size 42":
 
-1. Friday drafts the first message (saying it's their assistant) and shows it with the number. Nothing is sent until
-   they reply `YA 1234`.
-2. Friday then answers the other side by itself, within the brief: it shares only the details given, and anything
-   else — a deposit, another time, a price — comes back as a "❓" question first.
+1. If they don't give a number, Friday looks it up (Google Maps listing, website, Instagram bio, Linktree…), checks
+   that it's on WhatsApp, and shows it with its source and the first message. Nothing is sent until they reply
+   `YA 1234`.
+2. Friday then answers the other side by itself **in their name**, written as them in the first person, within the
+   brief: it shares only the details given, and anything else — a deposit, another time, a price — comes back as a
+   "❓" question first. It doesn't volunteer that it's an assistant, but if the other side sincerely asks whether
+   they're talking to a bot or AI, it doesn't lie: it says it's the person's assistant arranging this for them.
 3. Every message both ways is mirrored to their chat, and the outcome arrives as a "📋" summary.
 
 Each errand runs in its own conversation that can only reply to that one number, ask, or finish — it has no web,

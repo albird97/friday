@@ -15,6 +15,7 @@ const outbox: Outbox = {
   async sendImage() {},
   async typing() {},
   chatIdFor: (n) => `${n}@s.whatsapp.net`,
+  isOnWhatsApp: async (n) => !n.startsWith("6221"), // Jakarta landlines aren't on WhatsApp
 };
 
 const RESTO = { name: "Sate Senayan", number: "6285555555555" };
@@ -30,9 +31,10 @@ const to = (who: { number: string }) => sent.filter((s) => s.chatId === chatOf(w
 const start = (id: string, extra: Record<string, unknown> = {}) =>
   toolUse(id, "start_errand", {
     to_number: RESTO.number,
+    number_source: "Instagram @satesenayan (bio)",
     to_name: "Sate Senayan",
     goal: "Book a table for 4 on Saturday 31 Oct at 19:00 under the name Albert.",
-    first_message: "Halo, saya Friday, asisten Pak Albert. Mau reservasi meja untuk 4 orang Sabtu 31 Okt jam 19.00, bisa?",
+    first_message: "Halo, saya Albert. Mau reservasi meja untuk 4 orang Sabtu 31 Okt jam 19.00, bisa?",
     ...extra,
   });
 
@@ -62,7 +64,8 @@ describe("errands", () => {
     claude.replies.push({ content: [start("tu_1")], stop_reason: "tool_use" }, { content: [text("Cek dulu ya.")], stop_reason: "end_turn" });
     await handleIncoming(dm(ADMIN, "tolong reservasi di Sate Senayan 085555555555 sabtu jam 7 buat 4 orang"), outbox);
     const confirmation = to(ADMIN).find((t) => t?.startsWith("📤"))!;
-    assert.match(confirmation, /Kirim pesan ke Sate Senayan \(\+6285555555555\)/);
+    assert.match(confirmation, /Kirim pesan ke Sate Senayan \(\+6285555555555\)\?\*\nNomor dari: Instagram @satesenayan \(bio\)\n/);
+    assert.match(confirmation, /Pesan pertama \(atas nama Albert\):\nHalo, saya Albert\./);
     const code = /YA (\d{4})/.exec(confirmation)![1];
     assert.deepEqual(to(RESTO), []);
 
@@ -70,7 +73,7 @@ describe("errands", () => {
     sent = [];
     const before = claude.requests.length;
     await handleIncoming(dm(ADMIN, `YA ${code}`), outbox);
-    assert.deepEqual(to(RESTO), ["Halo, saya Friday, asisten Pak Albert. Mau reservasi meja untuk 4 orang Sabtu 31 Okt jam 19.00, bisa?"]);
+    assert.deepEqual(to(RESTO), ["Halo, saya Albert. Mau reservasi meja untuk 4 orang Sabtu 31 Okt jam 19.00, bisa?"]);
     assert.match(to(ADMIN)[0]!, /^✅ Terkirim ke Sate Senayan/);
     assert.equal(claude.requests.length, before);
 
@@ -81,6 +84,8 @@ describe("errands", () => {
     const errandRequest = claude.requests.at(-1)!.body;
     assert.deepEqual(toolNames(errandRequest), ["ask_requester", "finish_errand"]);
     assert.match(JSON.stringify(errandRequest.system), /Book a table for 4 on Saturday/);
+    assert.match(JSON.stringify(errandRequest.system), /Write as Albert, in the first person/);
+    assert.match(JSON.stringify(errandRequest.system), /sincerely ask whether they're chatting with a bot.*don't deny it/);
     assert.deepEqual(to(RESTO), ["Atas nama Albert, 4 orang ya kak."]);
     assert.deepEqual(to(ADMIN), ["💬 *Sate Senayan:* Bisa kak, atas nama siapa?", "↪️ *Ke Sate Senayan:*\nAtas nama Albert, 4 orang ya kak."]);
 
@@ -134,6 +139,7 @@ describe("errands", () => {
     };
     assert.match((await attempt({ to_number: "085555555555" })).content, /country code/);
     assert.match((await attempt({ to_number: WIFE.number })).content, /known contact; use send_message/);
+    assert.match((await attempt({ to_number: "62215551234" })).content, /isn't on WhatsApp \(often a landline\)/);
 
     // The previous test used one of today's two errands; this is the second, the third is refused.
     const second = await attempt({ to_number: "6286666666666" });

@@ -60,6 +60,10 @@ export async function startWhatsApp(onMessage: (msg: Incoming, outbox: Outbox) =
       await sock.sendPresenceUpdate("composing", chatId).catch(() => {});
     },
     chatIdFor: (number) => `${number}@s.whatsapp.net`,
+    async isOnWhatsApp(number) {
+      const [result] = (await sock.onWhatsApp(number).catch(() => undefined)) ?? [];
+      return result?.exists;
+    },
   };
 
   /** Phone number (digits) behind a sender id; WhatsApp sometimes hides it behind a "LID". */

@@ -29,4 +29,6 @@ export interface Outbox {
   typing(chatId: string): Promise<void>;
   /** The private-chat id for a phone number. */
   chatIdFor(number: string): string;
+  /** Whether a number has WhatsApp; undefined when it couldn't be checked (or the channel can't tell). */
+  isOnWhatsApp?(number: string): Promise<boolean | undefined>;
 }

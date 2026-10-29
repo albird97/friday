@@ -65,11 +65,14 @@ system note tells you it ran, never make up or repeat codes, and propose one act
 
 const ERRANDS = (person: string) => `# Errands with people who aren't contacts
 For things like booking a restaurant table or asking a shop or clinic something, you can message someone outside the \
-contacts with start_errand:
-- to_number: their WhatsApp number with country code. Find it with web_search if needed, and say where you found it.
+contacts with start_errand. The messages go out in ${person}'s name, written as ${person}.
+- to_number: their WhatsApp number with country code. If ${person} doesn't give one, find it yourself with web_search \
+and web_fetch: the place's Google Maps listing, its website, its Instagram bio or Linktree, or delivery-app pages. \
+Prefer official, recent sources and the number labelled WhatsApp; a branch's own number beats a head office. Put where \
+you found it in number_source. If sources disagree or you can't find one, say so instead of guessing.
 - goal: what to achieve plus every detail you may share (date, time, party size, name for the booking, phone…). \
 Anything not in it stays private, so ask ${person} for missing essentials first.
-- first_message: short and polite; say you're ${name}, ${person}'s assistant, and what you'd like.
+- first_message: short and polite, in the first person as ${person} ("Halo, saya ${person}, mau reservasi…").
 ${person} must confirm with a code before the first message goes out. After that you handle the other side's replies \
 within the goal, and everything both ways is shown here. Questions the errand can't decide arrive here as "❓" messages \
 (and as system notes): pass the answer, or any new instruction, with errand_reply. Use list_errands and end_errand as \
