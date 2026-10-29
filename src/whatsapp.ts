@@ -20,7 +20,8 @@ import pino from "pino";
 import qrcode from "qrcode-terminal";
 import type { Incoming, Media } from "./bot.js";
 import { config } from "./config.js";
-import { contactByNumber } from "./contacts.js";
+import { contactByNumber, isAdmin } from "./contacts.js";
+import { loadSession } from "./session.js";
 import type { Outbox } from "./types.js";
 
 const logger = pino({ level: "warn" });
@@ -195,6 +196,34 @@ export async function startWhatsApp(onMessage: (msg: Incoming, outbox: Outbox) =
         setTimeout(() => void connect(), status === DisconnectReason.restartRequired ? 0 : 3000);
       }
     });
+    // Only the admin may add Friday to groups: anyone else's group is left at once (every message there costs Claude
+    // credit). Both events can report the same add, so each group is handled once.
+    const isMe = (jid: string | undefined) =>
+      !!jid && [current.user?.id, current.user?.lid].some((me) => me && jidNormalizedUser(me) === jidNormalizedUser(jid));
+    const guarded = new Set<string>();
+    async function guardGroup(groupId: string, author: string | undefined, authorPn: string | undefined) {
+      if (!author || guarded.has(groupId)) return; // unknown adder (e.g. a resync of an old group): leave it alone
+      guarded.add(groupId);
+      const adder = await phoneNumberOf(author, authorPn);
+      if (isAdmin(adder)) return;
+      const name = await groupName(groupId);
+      console.log(`+${adder} added me to the group "${name}"; leaving, since only the admin may add me to groups.`);
+      await current.sendMessage(groupId, { text: `Maaf, saya hanya bisa ditambahkan ke grup oleh pemilik saya. Saya keluar dulu ya. 👋` }).catch(() => {});
+      await current.groupLeave(groupId).catch((err) => console.error(`Couldn't leave "${name}"`, err));
+      const admin = config.contacts[0];
+      if (admin) {
+        const who = contactByNumber(adder)?.name ?? `+${adder}`;
+        await outbox.sendText(outbox.chatIdFor(admin.number), `⚠️ ${who} menambahkan saya ke grup "${name}". Saya sudah keluar. Kalau grup itu memang boleh, tambahkan saya sendiri.`).catch(() => {});
+      }
+    }
+    current.ev.on("group-participants.update", ({ id, author, authorPn, participants, action }) => {
+      if (action === "add" && participants.some((p) => isMe(p.id) || isMe(p.phoneNumber) || isMe(p.lid))) void guardGroup(id, author, authorPn);
+    });
+    current.ev.on("groups.upsert", (groups) => {
+      // This also fires when WhatsApp resends info about groups Friday is already in; never leave one it has talked in.
+      for (const g of groups) if (!loadSession(g.id)) void guardGroup(g.id, g.author, g.authorPn);
+    });
+
     current.ev.on("messages.upsert", ({ messages, type }) => {
       if (type !== "notify") return;
       for (const m of messages) {
