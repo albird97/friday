@@ -6,6 +6,7 @@ import { markdownToPdf } from "./docs/pdf.js";
 import { sheetsToXlsx, sheetToCsv } from "./docs/sheets.js";
 import { slidesToPptx } from "./docs/slides.js";
 import { imagesEnabled, loadImage, makeImage, saveImage, type ImageResult } from "./images.js";
+import { errandTools, runErrandTool } from "./errands.js";
 import { addMemory, forgetMemory, SHARED } from "./memory.js";
 import { onehubTools, runOnehubTool } from "./onehub.js";
 import { cancelReminder, createReminder, describeReminder, listReminders } from "./reminders.js";
@@ -311,17 +312,20 @@ export const toolParams: BetaToolUnion[] = [
   { type: "web_fetch_20260209", name: "web_fetch", max_uses: 5, cache_control: { type: "ephemeral", ttl: "1h" } },
 ];
 
-/** The tools offered in a chat: the shared ones, plus onehub's for the people allowed to use it. */
+/**
+ * The tools offered in a chat: the shared ones, plus errands and onehub for the people allowed to use them. Those
+ * come after the shared, cached definitions so every chat still shares that cache.
+ */
 export async function toolsFor(chat: ChatContext): Promise<BetaToolUnion[]> {
-  const onehub = await onehubTools(chat);
-  return onehub.length ? [...toolParams, ...onehub] : toolParams;
+  const extra = [...errandTools(chat), ...(await onehubTools(chat))];
+  return extra.length ? [...toolParams, ...extra] : toolParams;
 }
 
 export async function runTool(name: string, input: unknown, ctx: ToolContext): Promise<{ content: string; isError: boolean }> {
   const t = TOOLS.find((candidate) => candidate.name === name);
   try {
     if (!t) {
-      const content = await runOnehubTool(name, input, ctx.chat, ctx.outbox);
+      const content = (await runErrandTool(name, input, ctx.chat, ctx.outbox)) ?? (await runOnehubTool(name, input, ctx.chat, ctx.outbox));
       return content === undefined ? { content: `Unknown tool ${name}.`, isError: true } : { content, isError: false };
     }
     const parsed = t.schema.safeParse(input);

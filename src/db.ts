@@ -64,4 +64,28 @@ db.exec(`
     noted       INTEGER NOT NULL DEFAULT 0,
     created_at  INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS errands (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    requester_number  TEXT NOT NULL,
+    requester_chat    TEXT NOT NULL,
+    requester_name    TEXT NOT NULL,
+    target_number     TEXT NOT NULL,
+    target_chat       TEXT NOT NULL,
+    target_name       TEXT NOT NULL,
+    goal              TEXT NOT NULL,
+    first_message     TEXT NOT NULL,
+    code              TEXT NOT NULL,
+    status            TEXT NOT NULL,
+    turns             INTEGER NOT NULL DEFAULT 0,
+    created_at        INTEGER NOT NULL,
+    updated_at        INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS errands_target ON errands (target_number, status);
+  CREATE TABLE IF NOT EXISTS errand_notes (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    requester_chat  TEXT NOT NULL,
+    text            TEXT NOT NULL,
+    noted           INTEGER NOT NULL DEFAULT 0,
+    created_at      INTEGER NOT NULL
+  );
 `);

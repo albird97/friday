@@ -38,6 +38,10 @@ const Env = z.object({
   // Actions: onehub's internal Friday API (…/internal/friday) and its token.
   ONEHUB_API_URL: z.string().default(""),
   ONEHUB_API_TOKEN: z.string().default(""),
+  // Errands: numbers that may have Friday message people outside the contacts (restaurants, shops…), private chats only.
+  ERRAND_USERS: z.string().default(""),
+  // New errands per day across everyone — messaging strangers a lot gets a number flagged as spam.
+  ERRAND_DAILY_LIMIT: z.coerce.number().int().min(0).default(10),
 });
 
 const env = Env.parse(process.env);
@@ -62,6 +66,7 @@ export const config = {
   contacts: parseContacts(env.ALLOWED_CONTACTS),
   pairingNumber: env.PAIRING_NUMBER.replace(/\D/g, ""),
   onehubUsers: env.ONEHUB_USERS.split(",").map((n) => n.replace(/\D/g, "")).filter(Boolean),
+  errandUsers: env.ERRAND_USERS.split(",").map((n) => n.replace(/\D/g, "")).filter(Boolean),
   authDir: path.join(env.DATA_DIR, "whatsapp-auth"),
   dbPath: path.join(env.DATA_DIR, "friday.db"),
   outboxDir: path.join(env.DATA_DIR, "outbox"),

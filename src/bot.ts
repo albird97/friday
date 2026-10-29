@@ -4,6 +4,7 @@ import { config } from "./config.js";
 import sharp from "sharp";
 import { addContact, allContacts, isAdmin, removeContact, takeDailyQuota } from "./contacts.js";
 import { imagesEnabled, saveImage } from "./images.js";
+import { confirmErrand, errandFor, errandIncoming, errandNotes } from "./errands.js";
 import { actionNotes, confirmAction } from "./onehub.js";
 import { deleteSession } from "./session.js";
 import { nowStamp } from "./time.js";
@@ -51,12 +52,20 @@ async function processMessage(msg: Incoming, outbox: Outbox): Promise<void> {
   if (!msg.addressed) return;
 
   if (!chat.isGroup && !chat.sender.isContact) {
+    // Strangers are ignored — unless Friday wrote to them first on someone's behalf (an errand).
+    const errand = errandFor(chat.sender.number);
+    const content = errand && (await toContent(msg));
+    if (errand && content) {
+      await errandIncoming(errand, chat, msg.text || `[${msg.media?.kind ?? "message"}]`, content, outbox);
+      return;
+    }
     console.log(`Ignored a private message from ${chat.sender.name} (+${chat.sender.number}), who isn't a contact. To allow them, send Friday: /add <name> ${chat.sender.number}`);
     return;
   }
   if (chat.isGroup && config.GROUP_ACCESS === "contacts" && !chat.sender.isContact) return;
 
   if (msg.text.startsWith("/") && (await runCommand(msg, outbox))) return;
+  if (await confirmErrand(chat, msg.text, outbox)) return;
   if (await confirmAction(chat, msg.text, outbox)) return;
 
   if (!takeDailyQuota(chat.sender.number)) {
@@ -66,8 +75,7 @@ async function processMessage(msg: Incoming, outbox: Outbox): Promise<void> {
 
   const content = await toContent(msg);
   if (!content) return;
-  const notes = actionNotes(chat);
-  if (notes) content.unshift({ type: "text", text: notes });
+  for (const notes of [errandNotes(chat), actionNotes(chat)]) if (notes) content.unshift({ type: "text", text: notes });
   await respond(chat, content, outbox);
 }
 

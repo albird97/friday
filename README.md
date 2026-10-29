@@ -109,6 +109,22 @@ Things to try:
 | `/add <name> <number>` | *(admin)* Let someone use Friday, e.g. `/add Mom 6281234567890` |
 | `/remove <name>` | *(admin)* Remove someone added with `/add` |
 
+## Errands with people outside the contacts
+
+People listed in `ERRAND_USERS` can ask Friday, in their private chat, to deal with someone who isn't a contact —
+"book a table for 4 at Sate Senayan on Saturday at 7", "ask this shop if they have size 42":
+
+1. Friday drafts the first message (saying it's their assistant) and shows it with the number. Nothing is sent until
+   they reply `YA 1234`.
+2. Friday then answers the other side by itself, within the brief: it shares only the details given, and anything
+   else — a deposit, another time, a price — comes back as a "❓" question first.
+3. Every message both ways is mirrored to their chat, and the outcome arrives as a "📋" summary.
+
+Each errand runs in its own conversation that can only reply to that one number, ask, or finish — it has no web,
+files, memories or onehub. Strangers who weren't contacted through an errand are still ignored. Messaging people who
+haven't written first is what gets bot numbers flagged by WhatsApp, so keep it to real errands; `ERRAND_DAILY_LIMIT`
+(10 by default) caps new ones per day.
+
 ## Business back office (onehub)
 
 Friday can also work with onehub, the business's back-office system, for the people listed in `ONEHUB_USERS` — and
