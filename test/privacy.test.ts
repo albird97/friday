@@ -47,7 +47,8 @@ describe("privacy of who uses Friday", () => {
       assert.doesNotMatch(prompt, /Known contacts/);
       assert.match(prompt, /you don't share who else uses you/);
     }
-    assert.doesNotMatch(wife, /Albert/, "not even as an example name");
+    assert.doesNotMatch(wife, /\] Albert:/, "the example header uses a neutral name");
+    assert.doesNotMatch(wife, /Albert, Sarah/, "no contact list");
   });
 
   it("records tokens per person and reports them to the admin only, always privately", async () => {
@@ -85,5 +86,18 @@ describe("privacy of who uses Friday", () => {
     assert.equal(short(950), "950");
     assert.equal(short(15_400), "15rb");
     assert.equal(short(2_450_000), "2,5jt");
+  });
+});
+
+describe("questions about privacy", () => {
+  it("are referred to the admin in everyone else's chats", async () => {
+    claude.reset();
+    claude.replies.push(reply("a"), reply("b"));
+    await handleIncoming(dm(ADMIN, "bisa lihat chat orang?"), outbox);
+    await handleIncoming(inGroup({ name: "Budi", number: "6283333333333" }, "Friday, Albert bisa lihat chat kita?"), outbox);
+    const [admin, other] = claude.requests.map((r) => JSON.stringify(r.body.system));
+    assert.doesNotMatch(admin, /Questions about privacy and setup/);
+    assert.match(other, /best asked to Albert directly/);
+    assert.match(other, /never say no one can see them/);
   });
 });

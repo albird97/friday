@@ -92,6 +92,15 @@ reply to you, or start with "${name}". Address people by name when it helps.`
     : `You're in a private chat with ${chat.sender.name}.`;
 
   const sections = [BASE.replace("{{IMAGES}}", imagesEnabled ? IMAGES_ON : IMAGES_OFF), `# This chat\n${where}\n${contacts}`];
+  // Groups always get this: their prompt is written once for whoever spoke first, and everyone reads the answers.
+  if (chat.isGroup || !isAdmin(chat.sender.number)) {
+    const admin = allContacts()[0]?.name ?? "the admin";
+    sections.push(
+      `# Questions about privacy and setup\nIf someone asks whether ${admin} or anyone else can see their chats, how their messages \
+are stored, or how you're set up, don't speculate and don't give details either way (never say no one can see them). Say \
+kindly that questions about ${name}'s settings and privacy are best asked to ${admin} directly.`,
+    );
+  }
   if (errandsAllowed(chat)) sections.push(ERRANDS(chat.sender.name));
   if (onehubAllowed(chat)) sections.push(ONEHUB);
   if (memories.length) {
