@@ -2,7 +2,7 @@ import { ADMIN, claude, WIFE } from "./setup.js";
 import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
 import { handleIncoming, type Incoming } from "../src/bot.js";
-import { short } from "../src/usage.js";
+import { costOf, short, usd } from "../src/usage.js";
 import type { Outbox } from "../src/types.js";
 
 let sent: { chatId: string; text?: string }[] = [];
@@ -59,17 +59,26 @@ describe("privacy of who uses Friday", () => {
     await handleIncoming(inGroup(ADMIN, "/usage"), outbox);
     assert.equal(sent.length, 1);
     assert.equal(sent[0].chatId, chatOf(ADMIN), "never answered in the group");
-    assert.match(sent[0].text!, /Pemakaian token Claude per orang/);
+    assert.match(sent[0].text!, /Pemakaian Claude per orang/);
     // The fake API reports 100 input + 20 output tokens per request.
-    assert.match(sent[0].text!, new RegExp(`- Albert \\(\\+${ADMIN.number}\\): \\*\\d+\\*`));
-    assert.match(sent[0].text!, new RegExp(`- Sarah \\(\\+${WIFE.number}\\): \\*\\d+\\*`));
+    assert.match(sent[0].text!, new RegExp(`- Albert \\(\\+${ADMIN.number}\\): \\*(<\\$0,01|\\$\\d+,\\d\\d)\\* — baru `));
+    assert.match(sent[0].text!, new RegExp(`- Sarah \\(\\+${WIFE.number}\\): \\*(<\\$0,01|\\$\\d+,\\d\\d)\\* — baru `));
 
     // For anyone else /usage and /contacts are just text to Claude, which has no such data.
     sent = [];
     claude.replies.push(reply("Maaf, itu bukan perintah yang saya kenal."), reply("Maaf, saya tidak bisa membagikan itu."));
     await handleIncoming(dm(WIFE, "/usage"), outbox);
     await handleIncoming(dm(WIFE, "/contacts"), outbox);
-    assert.equal(sent.some((s) => s.text?.includes("Pemakaian token") || s.text?.includes(ADMIN.number)), false);
+    assert.equal(sent.some((s) => s.text?.includes("Pemakaian Claude") || s.text?.includes(ADMIN.number)), false);
+  });
+
+  it("prices usage from list prices, including cache writes by TTL and web searches", () => {
+    const million = { input: 1e6, cacheRead: 1e6, cacheWrite5m: 1e6, cacheWrite1h: 1e6, output: 1e6, webSearches: 1000 };
+    // Opus 5.5: $4 in + $20 out + $0.20 cache read + $5 (1.25×) + $8 (2×) cache writes + $10 for 1,000 searches.
+    assert.equal(costOf("claude-opus-5-5", million).toFixed(2), "47.20");
+    assert.equal(costOf("claude-sonnet-5-5", { ...million, webSearches: 0 }).toFixed(2), "18.70");
+    assert.equal(usd(0.0008), "<$0,01");
+    assert.equal(usd(12.345), "$12,35");
   });
 
   it("abbreviates token counts", () => {

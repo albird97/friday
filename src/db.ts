@@ -93,6 +93,7 @@ db.exec(`
     output       INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS token_usage_day ON token_usage (day, number);
+  -- cache_write = 5-minute cache writes; cache_write_1h and web_searches were added later (see below).
   CREATE TABLE IF NOT EXISTS errand_notes (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     requester_chat  TEXT NOT NULL,
@@ -101,3 +102,12 @@ db.exec(`
     created_at      INTEGER NOT NULL
   );
 `);
+
+// Columns added after a table first shipped: SQLite's CREATE TABLE IF NOT EXISTS won't add them to an existing one.
+for (const [table, column, type] of [
+  ["token_usage", "cache_write_1h", "INTEGER NOT NULL DEFAULT 0"],
+  ["token_usage", "web_searches", "INTEGER NOT NULL DEFAULT 0"],
+] as const) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!columns.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+}

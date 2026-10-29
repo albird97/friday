@@ -105,7 +105,7 @@ Things to try:
 | `/help` | What Friday can do |
 | `/reset` | Start a fresh conversation (memories and reminders are kept) |
 | `/id` | Show this chat's id and your number |
-| `/usage` | *(admin)* Claude tokens used per person, today and this month |
+| `/usage` | *(admin)* Claude usage per person, today and this month: estimated dollars (list prices) and tokens |
 | `/contacts` | *(admin)* Who can use Friday |
 | `/add <name> <number>` | *(admin)* Let someone use Friday, e.g. `/add Mom 6281234567890` |
 | `/remove <name>` | *(admin)* Remove someone added with `/add` |

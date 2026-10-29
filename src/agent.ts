@@ -81,11 +81,14 @@ async function runTurn(session: Session, conv: Conversation): Promise<boolean> {
 
     const u = response.usage;
     session.tokens = u.input_tokens + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + u.output_tokens;
+    const written1h = u.cache_creation?.ephemeral_1h_input_tokens ?? 0;
     recordUsage(conv.usageBy, response.model, {
       input: u.input_tokens,
       cacheRead: u.cache_read_input_tokens ?? 0,
-      cacheWrite: u.cache_creation_input_tokens ?? 0,
+      cacheWrite5m: (u.cache_creation_input_tokens ?? 0) - written1h,
+      cacheWrite1h: written1h,
       output: u.output_tokens,
+      webSearches: u.server_tool_use?.web_search_requests ?? 0,
     });
     console.log(
       `[${conv.label}] ${response.model} ${response.stop_reason}: in ${u.input_tokens} + cached ${u.cache_read_input_tokens ?? 0} + written ${u.cache_creation_input_tokens ?? 0}, out ${u.output_tokens}`,
