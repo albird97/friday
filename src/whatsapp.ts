@@ -159,7 +159,7 @@ export async function startWhatsApp(onMessage: (msg: Incoming, outbox: Outbox) =
       version,
       auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
       logger,
-      browser: Browsers.macOS("Desktop"),
+      browser: Browsers.macOS("Chrome"), // a web-browser identity; linking by pairing code fails for "Desktop"
       markOnlineOnConnect: false,
       syncFullHistory: false,
     });
