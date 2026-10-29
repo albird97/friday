@@ -40,7 +40,9 @@ install_node() {
   rm -rf "$tmp"
 }
 
-install_deps() { (cd "$APP" && as_friday npm ci --omit=dev --no-audit --no-fund --loglevel=error); }
+# --ignore-scripts: every native module ships prebuilt binaries, and some npm versions try to compile
+# better-sqlite3 from source anyway (which needs build tools the server shouldn't have to install).
+install_deps() { (cd "$APP" && as_friday npm ci --omit=dev --ignore-scripts --no-audit --no-fund --loglevel=error); }
 
 write_unit() {
   cat > "$UNIT" <<EOF
