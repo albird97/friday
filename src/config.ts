@@ -31,6 +31,13 @@ const Env = z.object({
   SESSION_IDLE_HOURS: z.coerce.number().positive().default(6),
   SESSION_MAX_TOKENS: z.coerce.number().positive().default(80_000),
   LOG_LEVEL: z.string().default("info"),
+  // onehub (the business back office). Numbers that may use it, in private chats only: "6281234567890,6289876543210".
+  ONEHUB_USERS: z.string().default(""),
+  // Read access: a PostgreSQL URL for a role that can only SELECT, e.g. postgres://friday_ro:…@127.0.0.1:5432/onehub
+  ONEHUB_DATABASE_URL: z.string().default(""),
+  // Actions: onehub's internal Friday API (…/internal/friday) and its token.
+  ONEHUB_API_URL: z.string().default(""),
+  ONEHUB_API_TOKEN: z.string().default(""),
 });
 
 const env = Env.parse(process.env);
@@ -54,6 +61,7 @@ export const config = {
   ...env,
   contacts: parseContacts(env.ALLOWED_CONTACTS),
   pairingNumber: env.PAIRING_NUMBER.replace(/\D/g, ""),
+  onehubUsers: env.ONEHUB_USERS.split(",").map((n) => n.replace(/\D/g, "")).filter(Boolean),
   authDir: path.join(env.DATA_DIR, "whatsapp-auth"),
   dbPath: path.join(env.DATA_DIR, "friday.db"),
   outboxDir: path.join(env.DATA_DIR, "outbox"),

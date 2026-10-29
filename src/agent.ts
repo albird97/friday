@@ -10,7 +10,7 @@ import { chunk, toWhatsApp } from "./format.js";
 import { memoriesFor, SHARED } from "./memory.js";
 import { buildSystemPrompt } from "./prompt.js";
 import { isStale, loadSession, recapOf, saveSession, type Session } from "./session.js";
-import { runTool, toolParams } from "./tools.js";
+import { runTool, toolsFor } from "./tools.js";
 import type { ChatContext, Outbox } from "./types.js";
 
 let client: Anthropic | undefined; // created on first use, once the environment is fully configured
@@ -46,6 +46,7 @@ function echoable(content: BetaContentBlock[]): BetaContentBlockParam[] {
 
 /** Runs Claude until it has answered, executing tools along the way. Returns false on a refusal. */
 async function runTurn(session: Session, chat: ChatContext, outbox: Outbox): Promise<boolean> {
+  const tools = await toolsFor(chat);
   for (let step = 0; step < MAX_STEPS; step++) {
     await outbox.typing(chat.chatId);
     client ??= new Anthropic({ maxRetries: 3 });
@@ -59,7 +60,7 @@ async function runTurn(session: Session, chat: ChatContext, outbox: Outbox): Pro
         output_config: { effort: config.FRIDAY_EFFORT },
         cache_control: { type: "ephemeral" },
         system: session.system,
-        tools: toolParams,
+        tools,
         messages: session.messages,
       })
       .finalMessage();

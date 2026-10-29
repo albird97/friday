@@ -50,4 +50,18 @@ db.exec(`
     fact        TEXT NOT NULL,
     created_at  INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS pending_actions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id     TEXT NOT NULL,
+    number      TEXT NOT NULL,
+    code        TEXT NOT NULL,
+    action      TEXT NOT NULL,
+    params      TEXT NOT NULL,
+    token       TEXT,
+    summary     TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'pending',
+    result      TEXT,
+    noted       INTEGER NOT NULL DEFAULT 0,
+    created_at  INTEGER NOT NULL
+  );
 `);

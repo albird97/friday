@@ -7,6 +7,7 @@ import { sheetsToXlsx, sheetToCsv } from "./docs/sheets.js";
 import { slidesToPptx } from "./docs/slides.js";
 import { imagesEnabled, loadImage, makeImage, saveImage, type ImageResult } from "./images.js";
 import { addMemory, forgetMemory, SHARED } from "./memory.js";
+import { onehubTools, runOnehubTool } from "./onehub.js";
 import { cancelReminder, createReminder, describeReminder, listReminders } from "./reminders.js";
 import { formatDateTime } from "./time.js";
 import type { ChatContext, Outbox, OutgoingFile } from "./types.js";
@@ -310,14 +311,24 @@ export const toolParams: BetaToolUnion[] = [
   { type: "web_fetch_20260209", name: "web_fetch", max_uses: 5, cache_control: { type: "ephemeral", ttl: "1h" } },
 ];
 
+/** The tools offered in a chat: the shared ones, plus onehub's for the people allowed to use it. */
+export async function toolsFor(chat: ChatContext): Promise<BetaToolUnion[]> {
+  const onehub = await onehubTools(chat);
+  return onehub.length ? [...toolParams, ...onehub] : toolParams;
+}
+
 export async function runTool(name: string, input: unknown, ctx: ToolContext): Promise<{ content: string; isError: boolean }> {
   const t = TOOLS.find((candidate) => candidate.name === name);
-  if (!t) return { content: `Unknown tool ${name}.`, isError: true };
-  const parsed = t.schema.safeParse(input);
-  if (!parsed.success) return { content: `Invalid input: ${z.prettifyError(parsed.error)}`, isError: true };
   try {
+    if (!t) {
+      const content = await runOnehubTool(name, input, ctx.chat, ctx.outbox);
+      return content === undefined ? { content: `Unknown tool ${name}.`, isError: true } : { content, isError: false };
+    }
+    const parsed = t.schema.safeParse(input);
+    if (!parsed.success) return { content: `Invalid input: ${z.prettifyError(parsed.error)}`, isError: true };
     return { content: await t.run(parsed.data, ctx), isError: false };
   } catch (err) {
+    if (err instanceof z.ZodError) return { content: `Invalid input: ${z.prettifyError(err)}`, isError: true };
     return { content: err instanceof Error ? err.message : String(err), isError: true };
   }
 }

@@ -4,6 +4,7 @@ import { config } from "./config.js";
 import sharp from "sharp";
 import { addContact, allContacts, isAdmin, removeContact, takeDailyQuota } from "./contacts.js";
 import { imagesEnabled, saveImage } from "./images.js";
+import { actionNotes, confirmAction } from "./onehub.js";
 import { deleteSession } from "./session.js";
 import { nowStamp } from "./time.js";
 import type { ChatContext, Outbox } from "./types.js";
@@ -56,6 +57,7 @@ async function processMessage(msg: Incoming, outbox: Outbox): Promise<void> {
   if (chat.isGroup && config.GROUP_ACCESS === "contacts" && !chat.sender.isContact) return;
 
   if (msg.text.startsWith("/") && (await runCommand(msg, outbox))) return;
+  if (await confirmAction(chat, msg.text, outbox)) return;
 
   if (!takeDailyQuota(chat.sender.number)) {
     await outbox.sendText(chat.chatId, `You've reached today's limit of ${config.DAILY_MESSAGE_LIMIT} messages. Talk tomorrow! 👋`, chat.replyTo);
@@ -63,7 +65,10 @@ async function processMessage(msg: Incoming, outbox: Outbox): Promise<void> {
   }
 
   const content = await toContent(msg);
-  if (content) await respond(chat, content, outbox);
+  if (!content) return;
+  const notes = actionNotes(chat);
+  if (notes) content.unshift({ type: "text", text: notes });
+  await respond(chat, content, outbox);
 }
 
 /** Slash commands handled without Claude. Returns false for unknown commands, which go to Claude as text. */

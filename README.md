@@ -109,6 +109,18 @@ Things to try:
 | `/add <name> <number>` | *(admin)* Let someone use Friday, e.g. `/add Mom 6281234567890` |
 | `/remove <name>` | *(admin)* Remove someone added with `/add` |
 
+## Business back office (onehub)
+
+Friday can also work with onehub, the business's back-office system, for the people listed in `ONEHUB_USERS` — and
+only in their private chats (never in groups, where others read along).
+
+- **Looking things up** ("sales today?", "stock of ABC-12", "unshipped orders as Excel"): Friday writes SQL against
+  onehub's database through a PostgreSQL role that can only `SELECT`, and never sees tables or columns that role isn't
+  granted (credentials, payroll…). Queries are limited to one statement, 8 seconds and 200 rows.
+- **Doing things** (e.g. correcting stock): onehub's internal API lists the actions it allows. When Friday proposes
+  one, onehub computes a preview and Friday's code — not Claude — sends it with a one-time code. The action runs only
+  when that person replies `YA 1234` within 10 minutes; the confirmation never goes through Claude.
+
 ## Sharing with family and friends
 
 Add people with `/add` (or in `ALLOWED_CONTACTS`). Each person gets their own private conversation, reminders and
