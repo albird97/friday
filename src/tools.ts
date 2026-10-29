@@ -33,7 +33,8 @@ function destination(ctx: ToolContext, contactName: string | undefined, action: 
   if (!contactName) return { chatId: ctx.chat.chatId, label: "this chat" };
   requireContact(ctx, action);
   const contact = findContact(contactName);
-  if (!contact) throw new Error(`"${contactName}" isn't a known contact.`);
+  // Only the admin learns whether a name is a contact; for anyone else a miss looks like any other failure.
+  if (!contact) throw new Error(isAdmin(ctx.chat.sender.number) ? `"${contactName}" isn't a known contact.` : `Can't send to "${contactName}".`);
   return { chatId: ctx.outbox.chatIdFor(contact.number), label: contact.name };
 }
 
@@ -175,9 +176,13 @@ const BASE_TOOLS: Tool[] = [
     }),
     async run({ fact, scope }, ctx) {
       requireContact(ctx, "save memories");
-      const owner = scope === "shared" ? SHARED : ctx.chat.isGroup ? ctx.chat.chatId : ctx.chat.sender.number;
+      // Shared memories appear in every chat, so only the admin may write them.
+      const shared = scope === "shared" && isAdmin(ctx.chat.sender.number);
+      const owner = shared ? SHARED : ctx.chat.isGroup ? ctx.chat.chatId : ctx.chat.sender.number;
       const id = addMemory(owner, fact);
-      return `Saved memory #${id} (${scope}).`;
+      return scope === "shared" && !shared
+        ? `Saved memory #${id} for this chat only (only the admin can save memories shared everywhere).`
+        : `Saved memory #${id} (${scope}).`;
     },
   }),
   tool({
