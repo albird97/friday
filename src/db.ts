@@ -94,6 +94,11 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS token_usage_day ON token_usage (day, number);
   -- cache_write = 5-minute cache writes; cache_write_1h and web_searches were added later (see below).
+  CREATE TABLE IF NOT EXISTS usage_alerts (
+    day  TEXT NOT NULL,
+    key  TEXT NOT NULL,
+    PRIMARY KEY (day, key)
+  );
   CREATE TABLE IF NOT EXISTS errand_notes (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     requester_chat  TEXT NOT NULL,

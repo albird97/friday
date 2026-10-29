@@ -44,6 +44,9 @@ const Env = z.object({
   ERRAND_USERS: z.string().default(""),
   // New errands per day across everyone — messaging strangers a lot gets a number flagged as spam.
   ERRAND_DAILY_LIMIT: z.coerce.number().int().min(0).default(10),
+  // Tell the admin (never block anyone) when Claude spending today passes these estimated dollar amounts. 0 = off.
+  USAGE_ALERT_DAILY_TOTAL: z.coerce.number().min(0).default(20),
+  USAGE_ALERT_DAILY_PERSON: z.coerce.number().min(0).default(5),
 });
 
 const env = Env.parse(process.env);

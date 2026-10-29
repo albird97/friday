@@ -3,6 +3,7 @@ import { config } from "./config.js";
 import { imageProvider, pruneImages } from "./images.js";
 import { hideSignalSessionDumps } from "./logging.js";
 import { startReminderLoop } from "./reminders.js";
+import { onUsageAlert } from "./usage.js";
 import { startWhatsApp } from "./whatsapp.js";
 
 hideSignalSessionDumps();
@@ -21,6 +22,10 @@ console.log(
 pruneImages();
 const outbox = await startWhatsApp((msg, out) => void handleIncoming(msg, out));
 startReminderLoop(outbox);
+onUsageAlert(async (text) => {
+  const admin = config.contacts[0];
+  if (admin) await outbox.sendText(outbox.chatIdFor(admin.number), text);
+});
 
 // A restart (deploy, update) waits for replies in progress instead of cutting them off mid-answer. systemd allows 90 s.
 process.once("SIGTERM", () => {

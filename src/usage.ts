@@ -1,3 +1,4 @@
+import { config } from "./config.js";
 import { db } from "./db.js";
 import { localDay } from "./time.js";
 
@@ -23,11 +24,41 @@ export function costOf(model: string, u: Usage): number {
   return perToken + u.webSearches * WEB_SEARCH;
 }
 
+let alertSink: ((text: string) => Promise<void>) | undefined;
+
+/** Where spending alerts go (the admin's chat). Alerts only inform; nobody is ever blocked. */
+export function onUsageAlert(send: (text: string) => Promise<void>): void {
+  alertSink = send;
+}
+
+/** Sends each alert at most once a day: today's total past USAGE_ALERT_DAILY_TOTAL, a person past USAGE_ALERT_DAILY_PERSON. */
+function checkAlerts(by: Person, day: string): void {
+  if (!alertSink) return;
+  const send = alertSink;
+  const fire = (key: string, text: string) => {
+    if (db.prepare("INSERT OR IGNORE INTO usage_alerts (day, key) VALUES (?, ?)").run(day, key).changes) void send(text).catch(() => {});
+  };
+  const rows = totals(day, day);
+  const total = rows.reduce((a, r) => a + r.dollars, 0);
+  const note = "Ini hanya pemberitahuan; tidak ada yang dibatasi. Kirim /usage untuk rinciannya.";
+  if (config.USAGE_ALERT_DAILY_TOTAL > 0 && total >= config.USAGE_ALERT_DAILY_TOTAL) {
+    fire("total", `⚠️ Pemakaian Claude hari ini sudah *${usd(total)}*, lewat ${usd(config.USAGE_ALERT_DAILY_TOTAL)}. ${note}`);
+  }
+  const person = rows.find((r) => r.number === by.number);
+  if (person && config.USAGE_ALERT_DAILY_PERSON > 0 && person.dollars >= config.USAGE_ALERT_DAILY_PERSON) {
+    fire(
+      `person:${by.number}`,
+      `⚠️ ${person.name} (+${person.number}) sudah memakai *${usd(person.dollars)}* hari ini, lewat ${usd(config.USAGE_ALERT_DAILY_PERSON)}. ${note}`,
+    );
+  }
+}
+
 export function recordUsage(by: Person, model: string, u: Usage, at = new Date()): void {
   db.prepare(
     `INSERT INTO token_usage (day, number, name, model, input, cache_read, cache_write, cache_write_1h, output, web_searches)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(localDay(at), by.number, by.name, model, u.input, u.cacheRead, u.cacheWrite5m, u.cacheWrite1h, u.output, u.webSearches);
+  checkAlerts(by, localDay(at));
 }
 
 type Row = { number: string; name: string; model: string; input: number; cache_read: number; cache_write: number; cache_write_1h: number; output: number; web_searches: number };
