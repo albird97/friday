@@ -105,6 +105,7 @@ Things to try:
 | `/help` | What Friday can do |
 | `/reset` | Start a fresh conversation (memories and reminders are kept) |
 | `/id` | Show this chat's id and your number |
+| `/usage` | *(admin)* Claude tokens used per person, today and this month |
 | `/contacts` | *(admin)* Who can use Friday |
 | `/add <name> <number>` | *(admin)* Let someone use Friday, e.g. `/add Mom 6281234567890` |
 | `/remove <name>` | *(admin)* Remove someone added with `/add` |
@@ -142,7 +143,8 @@ only in their private chats (never in groups, where others read along).
 
 ## Sharing with family and friends
 
-Add people with `/add` (or in `ALLOWED_CONTACTS`). Each person gets their own private conversation, reminders and
+Add people with `/add` (or in `ALLOWED_CONTACTS`). Only the admin sees who else uses Friday: admin commands always answer in the admin's
+private chat (even when sent in a group), and nobody else's conversations include the contact list. Each person gets their own private conversation, reminders and
 memories — others can't see them (though as the host, the data lives on your machine). To protect your bill, everyone
 except the admin is limited to `DAILY_MESSAGE_LIMIT` messages a day (50 by default). People who aren't contacts are
 ignored in private chats; Friday logs their number so you can `/add` them.

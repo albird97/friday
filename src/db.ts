@@ -81,6 +81,18 @@ db.exec(`
     updated_at        INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS errands_target ON errands (target_number, status);
+  CREATE TABLE IF NOT EXISTS token_usage (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    day          TEXT NOT NULL,
+    number       TEXT NOT NULL,
+    name         TEXT NOT NULL,
+    model        TEXT NOT NULL,
+    input        INTEGER NOT NULL,
+    cache_read   INTEGER NOT NULL,
+    cache_write  INTEGER NOT NULL,
+    output       INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS token_usage_day ON token_usage (day, number);
   CREATE TABLE IF NOT EXISTS errand_notes (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     requester_chat  TEXT NOT NULL,

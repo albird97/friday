@@ -13,6 +13,7 @@ import { buildSystemPrompt } from "./prompt.js";
 import { isStale, loadSession, recapOf, saveSession, type Session } from "./session.js";
 import { runTool, toolsFor } from "./tools.js";
 import type { ChatContext, Outbox } from "./types.js";
+import { recordUsage, type Person } from "./usage.js";
 
 let client: Anthropic | undefined; // created on first use, once the environment is fully configured
 
@@ -28,6 +29,8 @@ export type Conversation = {
   key: string;
   /** For log lines. */
   label: string;
+  /** Whose token use this is, for /usage. */
+  usageBy: Person;
   /** System prompt for a fresh session; `previous` is the stale one it replaces, if any. */
   system: (previous: Session | undefined) => string;
   tools: BetaToolUnion[];
@@ -78,6 +81,12 @@ async function runTurn(session: Session, conv: Conversation): Promise<boolean> {
 
     const u = response.usage;
     session.tokens = u.input_tokens + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + u.output_tokens;
+    recordUsage(conv.usageBy, response.model, {
+      input: u.input_tokens,
+      cacheRead: u.cache_read_input_tokens ?? 0,
+      cacheWrite: u.cache_creation_input_tokens ?? 0,
+      output: u.output_tokens,
+    });
     console.log(
       `[${conv.label}] ${response.model} ${response.stop_reason}: in ${u.input_tokens} + cached ${u.cache_read_input_tokens ?? 0} + written ${u.cache_creation_input_tokens ?? 0}, out ${u.output_tokens}`,
     );
@@ -162,6 +171,7 @@ export async function respond(chat: ChatContext, content: BetaContentBlockParam[
     {
       key: chat.chatId,
       label: chat.chatName,
+      usageBy: chat.sender,
       system: (previous) => {
         const owners = [SHARED, chat.isGroup ? chat.chatId : chat.sender.number];
         return buildSystemPrompt(chat, memoriesFor(owners), previous ? recapOf(previous.messages) : "");

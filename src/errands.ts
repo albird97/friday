@@ -188,6 +188,7 @@ async function runErrand(errand: Errand, content: BetaContentBlockParam[], outbo
     {
       key: `errand:${errand.id}`,
       label: `errand ${label(errand)}`,
+      usageBy: { number: errand.requester_number, name: errand.requester_name },
       system: () => errandSystem(errand),
       tools: ERRAND_TOOLS.map((t) => ({ name: t.name, description: t.description, input_schema: jsonSchema(t.schema) })),
       runTool: async (name, input) => {

@@ -7,6 +7,7 @@ import { imagesEnabled, saveImage } from "./images.js";
 import { confirmErrand, errandFor, errandIncoming, errandNotes } from "./errands.js";
 import { actionNotes, confirmAction } from "./onehub.js";
 import { deleteSession } from "./session.js";
+import { usageReport } from "./usage.js";
 import { nowStamp } from "./time.js";
 import type { ChatContext, Outbox } from "./types.js";
 
@@ -85,6 +86,8 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
   const [command, ...args] = msg.text.trim().split(/\s+/);
   const reply = (text: string) => outbox.sendText(chat.chatId, text, chat.replyTo);
   const admin = isAdmin(chat.sender.number);
+  // Who uses Friday (and how much) is for the admin's eyes only: admin answers always go to their private chat.
+  const toAdmin = (text: string) => outbox.sendText(outbox.chatIdFor(chat.sender.number), text);
 
   switch (command.toLowerCase()) {
     case "/help":
@@ -95,7 +98,9 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
           "",
           "/reset — start a fresh conversation (keeps memories and reminders)",
           "/id — show this chat's id and your number",
-          ...(admin ? ["", "_Admin:_", "/contacts — who can use me", "/add <name> <number> — allow someone", "/remove <name> — remove someone"] : []),
+          ...(admin && !chat.isGroup
+            ? ["", "_Admin:_", "/usage — Claude tokens per person", "/contacts — who can use me", "/add <name> <number> — allow someone", "/remove <name> — remove someone"]
+            : []),
         ].join("\n"),
       );
       return true;
@@ -107,30 +112,36 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
     case "/id":
       await reply(`Chat id: ${chat.chatId}\nYour number: +${chat.sender.number}`);
       return true;
-    case "/contacts":
+    case "/usage":
+    case "/contacts": {
       if (!admin) return false;
-      await reply(allContacts().map((c, i) => `${i === 0 ? "👑" : "-"} ${c.name} (+${c.number})`).join("\n") || "No contacts yet.");
+      const answer =
+        command.toLowerCase() === "/usage"
+          ? usageReport()
+          : allContacts().map((c, i) => `${i === 0 ? "👑" : "-"} ${c.name} (+${c.number})`).join("\n") || "No contacts yet.";
+      await toAdmin(answer);
       return true;
+    }
     case "/add": {
       if (!admin) return false;
       const number = args.at(-1) ?? "";
       const name = args.slice(0, -1).join(" ");
       if (!name || !/\d{8,}/.test(number.replace(/\D/g, ""))) {
-        await reply("Usage: /add <name> <number with country code>\nExample: /add Mom 6281234567890");
+        await toAdmin("Usage: /add <name> <number with country code>\nExample: /add Mom 6281234567890");
         return true;
       }
       try {
         const contact = addContact(name, number);
-        await reply(`✅ ${contact.name} (+${contact.number}) can now chat with me.`);
+        await toAdmin(`✅ ${contact.name} (+${contact.number}) can now chat with me.`);
       } catch (err) {
-        await reply(err instanceof Error ? err.message : String(err));
+        await toAdmin(err instanceof Error ? err.message : String(err));
       }
       return true;
     }
     case "/remove": {
       if (!admin) return false;
       const result = removeContact(args.join(" "));
-      await reply(result.removed ? `Removed ${result.removed.name}.` : (result.error ?? "Couldn't remove that contact."));
+      await toAdmin(result.removed ? `Removed ${result.removed.name}.` : (result.error ?? "Couldn't remove that contact."));
       return true;
     }
     default:
