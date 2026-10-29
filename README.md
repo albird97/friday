@@ -74,7 +74,8 @@ Friday only works (and only sends reminders) while it's running.
 - **On your Mac, just for now:** `caffeinate -i npm start` in a terminal; Friday stops when you close it.
 - **On a Linux server that also runs other apps:** `sudo scripts/linux-service.sh install` sets Friday up under
   `/opt/friday` as a systemd service with its own Node, a 400 MB memory cap and the lowest CPU priority, so it never
-  slows the other apps down. Put your `.env` in `/opt/friday/app/` (to move from another machine, also copy its
+  slows the other apps down. It also backs up the database, the WhatsApp login and `.env` every night at 03:30
+  (14 days in `/opt/friday/backups`; `backup` runs one now — restore steps are in `scripts/backup.sh`). Put your `.env` in `/opt/friday/app/` (to move from another machine, also copy its
   `data/` folder there and stop the old copy first), then `restart`. `update` pulls new code; `logs` follows the log.
 - **On a server with Docker:** `docker compose up -d`, then `docker compose logs -f` to see the QR code the
   first time. Data is kept in `./data`.

@@ -7,6 +7,7 @@
 #   sudo scripts/linux-service.sh update     # pull the latest code from GitHub and restart
 #   sudo scripts/linux-service.sh restart    # after changing /opt/friday/app/.env
 #   sudo scripts/linux-service.sh logs       # follow the log (Ctrl+C to stop following)
+#   sudo scripts/linux-service.sh backup     # back up data now (also runs daily at 03:30 into /opt/friday/backups)
 #   sudo scripts/linux-service.sh uninstall  # stop and remove the service (keeps /opt/friday)
 set -euo pipefail
 
@@ -78,7 +79,39 @@ InaccessiblePaths=-/var/www
 [Install]
 WantedBy=multi-user.target
 EOF
+  # Daily backup (scripts/backup.sh): reads Friday's data, writes only to the backup folder.
+  cat > "/etc/systemd/system/$NAME-backup.service" <<EOF
+[Unit]
+Description=Back up Friday's data
+
+[Service]
+Type=oneshot
+User=$NAME
+ExecStart=/bin/bash $APP/scripts/backup.sh
+Nice=19
+IOWeight=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=$HOME_DIR/backups
+InaccessiblePaths=-/var/www
+EOF
+  cat > "/etc/systemd/system/$NAME-backup.timer" <<EOF
+[Unit]
+Description=Back up Friday's data daily
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+  as_friday mkdir -p "$HOME_DIR/backups"
+  chmod 700 "$HOME_DIR/backups"
   systemctl daemon-reload
+  systemctl enable --quiet --now "$NAME-backup.timer"
 }
 
 case "${1:-}" in
@@ -113,14 +146,18 @@ case "${1:-}" in
   logs)
     journalctl -u "$NAME" -n 50 -f -o cat
     ;;
+  backup)
+    systemctl start "$NAME-backup.service"
+    journalctl -u "$NAME-backup" -n 1 -o cat
+    ;;
   uninstall)
-    systemctl disable --now "$NAME" 2>/dev/null || true
-    rm -f "$UNIT"
+    systemctl disable --now "$NAME" "$NAME-backup.timer" 2>/dev/null || true
+    rm -f "$UNIT" "/etc/systemd/system/$NAME-backup.service" "/etc/systemd/system/$NAME-backup.timer"
     systemctl daemon-reload
     echo "Friday's service is removed. Its files are still in $HOME_DIR."
     ;;
   *)
-    echo "Usage: sudo $0 install|update|restart|logs|uninstall" >&2
+    echo "Usage: sudo $0 install|update|restart|logs|backup|uninstall" >&2
     exit 1
     ;;
 esac
