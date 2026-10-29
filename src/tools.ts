@@ -295,7 +295,10 @@ function inputSchema(schema: z.ZodObject) {
   return json as { type: "object"; [key: string]: unknown };
 }
 
-/** Tool definitions sent to Claude: ours plus Anthropic's server-side web search and fetch. */
+/**
+ * Tool definitions sent to Claude: ours plus Anthropic's server-side web search and fetch. The cache breakpoint on
+ * the last one caches all tool definitions for an hour, shared by every chat (they're identical everywhere).
+ */
 export const toolParams: BetaToolUnion[] = [
   ...TOOLS.map((t) => ({
     name: t.name,
@@ -304,7 +307,7 @@ export const toolParams: BetaToolUnion[] = [
     eager_input_streaming: true,
   })),
   { type: "web_search_20260209", name: "web_search", max_uses: 5 },
-  { type: "web_fetch_20260209", name: "web_fetch", max_uses: 5 },
+  { type: "web_fetch_20260209", name: "web_fetch", max_uses: 5, cache_control: { type: "ephemeral", ttl: "1h" } },
 ];
 
 export async function runTool(name: string, input: unknown, ctx: ToolContext): Promise<{ content: string; isError: boolean }> {
