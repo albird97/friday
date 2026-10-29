@@ -38,6 +38,11 @@ const TEXT_FILE = /\.(txt|md|csv|tsv|json|xml|html?|log|ya?ml|ics|vcf)$/i;
 
 const queues = new Map<string, Promise<void>>();
 
+/** Resolves once no chat has a message in progress (used to finish replies before shutting down). */
+export async function idle(): Promise<void> {
+  while (queues.size > 0) await Promise.allSettled([...queues.values()]);
+}
+
 /** Handles messages one at a time per chat, so a conversation never runs two turns at once. */
 export function handleIncoming(msg: Incoming, outbox: Outbox): Promise<void> {
   const chatId = msg.chat.chatId;

@@ -5,6 +5,8 @@ import sharp from "sharp";
 import { handleIncoming, type Incoming, type Media } from "../src/bot.js";
 import { db } from "../src/db.js";
 import { findContact } from "../src/contacts.js";
+import { saveImage } from "../src/images.js";
+import { runTool } from "../src/tools.js";
 import type { Outbox } from "../src/types.js";
 
 type Sent = { chatId: string; text?: string; file?: string; image?: boolean };
@@ -200,5 +202,26 @@ describe("voice notes", () => {
     const silent: Media = { kind: "audio", mimetype: "audio/ogg", size: 5, download: async () => Buffer.from("...") };
     await handleIncoming(dm(ADMIN, "", silent), outbox);
     assert.match(lastUserText(claude.requests[0].body), /no recognisable speech/);
+  });
+});
+
+describe("profile photo", () => {
+  it("can be changed by the admin only, from an image in the chat", async () => {
+    const photos: Buffer[] = [];
+    const withPhoto: Outbox = { ...outbox, setProfilePicture: async (image) => void photos.push(image) };
+    claude.replies.push({ content: [text("ok")], stop_reason: "end_turn" }, { content: [text("ok")], stop_reason: "end_turn" });
+    await handleIncoming(dm(ADMIN, "hi"), outbox);
+    await handleIncoming(dm(WIFE, "hi"), outbox);
+    const names = (i: number) => (claude.requests[i].body.tools as any[]).map((t) => t.name);
+    assert.ok(names(0).includes("set_profile_picture"));
+    assert.equal(names(1).includes("set_profile_picture"), false);
+
+    const adminChat = dm(ADMIN, "").chat;
+    const id = saveImage(adminChat.chatId, "image/png", generated);
+    assert.equal((await runTool("set_profile_picture", { image_id: id }, { chat: adminChat, outbox: withPhoto })).isError, false);
+    assert.deepEqual(photos, [generated]);
+    const wifeTry = await runTool("set_profile_picture", { image_id: id }, { chat: dm(WIFE, "").chat, outbox: withPhoto });
+    assert.match(wifeTry.content, /Only the admin/);
+    assert.equal(photos.length, 1);
   });
 });

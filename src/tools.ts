@@ -1,6 +1,6 @@
 import type { BetaToolUnion } from "@anthropic-ai/sdk/resources/beta/messages/messages.js";
 import { z } from "zod";
-import { findContact } from "./contacts.js";
+import { findContact, isAdmin } from "./contacts.js";
 import { markdownToDocx } from "./docs/docx.js";
 import { markdownToPdf } from "./docs/pdf.js";
 import { sheetsToXlsx, sheetToCsv } from "./docs/sheets.js";
@@ -292,6 +292,25 @@ const BASE_TOOLS: Tool[] = [
 
 export const TOOLS: Tool[] = [...BASE_TOOLS, ...(imagesEnabled ? IMAGE_TOOLS : [])];
 
+// Only offered when the admin is the one talking (in any chat), and checked again when run.
+const ADMIN_TOOLS: Tool[] = [
+  tool({
+    name: "set_profile_picture",
+    description:
+      "Use a picture as your own WhatsApp profile photo (only the admin can ask for this). Give its image number — make " +
+      "it first with generate_image if needed. Square images look best; WhatsApp crops to a circle.",
+    schema: z.object({ image_id: z.number().int() }),
+    async run({ image_id }, ctx) {
+      if (!isAdmin(ctx.chat.sender.number)) throw new Error("Only the admin can change my profile photo.");
+      if (!ctx.outbox.setProfilePicture) throw new Error("The profile photo can only be changed on WhatsApp.");
+      const image = loadImage(image_id, ctx.chat.chatId);
+      if (!image) throw new Error(`Image #${image_id} isn't available in this chat.`);
+      await ctx.outbox.setProfilePicture(image.data);
+      return `My profile photo is now image #${image_id}.`;
+    },
+  }),
+];
+
 function inputSchema(schema: z.ZodObject) {
   const { $schema: _ignored, ...json } = z.toJSONSchema(schema, { io: "input" }) as Record<string, unknown>;
   return json as { type: "object"; [key: string]: unknown };
@@ -301,13 +320,10 @@ function inputSchema(schema: z.ZodObject) {
  * Tool definitions sent to Claude: ours plus Anthropic's server-side web search and fetch. The cache breakpoint on
  * the last one caches all tool definitions for an hour, shared by every chat (they're identical everywhere).
  */
+const toParam = (t: Tool) => ({ name: t.name, description: t.description, input_schema: inputSchema(t.schema), eager_input_streaming: true });
+
 export const toolParams: BetaToolUnion[] = [
-  ...TOOLS.map((t) => ({
-    name: t.name,
-    description: t.description,
-    input_schema: inputSchema(t.schema),
-    eager_input_streaming: true,
-  })),
+  ...TOOLS.map(toParam),
   { type: "web_search_20260209", name: "web_search", max_uses: 5 },
   { type: "web_fetch_20260209", name: "web_fetch", max_uses: 5, cache_control: { type: "ephemeral", ttl: "1h" } },
 ];
@@ -317,12 +333,13 @@ export const toolParams: BetaToolUnion[] = [
  * come after the shared, cached definitions so every chat still shares that cache.
  */
 export async function toolsFor(chat: ChatContext): Promise<BetaToolUnion[]> {
-  const extra = [...errandTools(chat), ...(await onehubTools(chat))];
+  const admin = isAdmin(chat.sender.number) && imagesEnabled ? ADMIN_TOOLS.map(toParam) : [];
+  const extra = [...admin, ...errandTools(chat), ...(await onehubTools(chat))];
   return extra.length ? [...toolParams, ...extra] : toolParams;
 }
 
 export async function runTool(name: string, input: unknown, ctx: ToolContext): Promise<{ content: string; isError: boolean }> {
-  const t = TOOLS.find((candidate) => candidate.name === name);
+  const t = [...TOOLS, ...ADMIN_TOOLS].find((candidate) => candidate.name === name);
   try {
     if (!t) {
       const content = (await runErrandTool(name, input, ctx.chat, ctx.outbox)) ?? (await runOnehubTool(name, input, ctx.chat, ctx.outbox));

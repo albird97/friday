@@ -64,6 +64,9 @@ export async function startWhatsApp(onMessage: (msg: Incoming, outbox: Outbox) =
       const [result] = (await sock.onWhatsApp(number).catch(() => undefined)) ?? [];
       return result?.exists;
     },
+    async setProfilePicture(image) {
+      await sock.updateProfilePicture(jidNormalizedUser(sock.user!.id), image);
+    },
   };
 
   /** Phone number (digits) behind a sender id; WhatsApp sometimes hides it behind a "LID". */

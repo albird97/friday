@@ -1,4 +1,4 @@
-import { handleIncoming } from "./bot.js";
+import { handleIncoming, idle } from "./bot.js";
 import { config } from "./config.js";
 import { imageProvider, pruneImages } from "./images.js";
 import { hideSignalSessionDumps } from "./logging.js";
@@ -21,3 +21,9 @@ console.log(
 pruneImages();
 const outbox = await startWhatsApp((msg, out) => void handleIncoming(msg, out));
 startReminderLoop(outbox);
+
+// A restart (deploy, update) waits for replies in progress instead of cutting them off mid-answer. systemd allows 90 s.
+process.once("SIGTERM", () => {
+  console.log("Stopping: finishing replies in progress…");
+  void Promise.race([idle(), new Promise((resolve) => setTimeout(resolve, 80_000))]).then(() => process.exit(0));
+});
