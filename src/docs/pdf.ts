@@ -1,7 +1,7 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 import pdfmake from "pdfmake";
-import type { Content, ContentText, TDocumentDefinitions } from "pdfmake/interfaces.js";
+import type { CanvasElement, Content, ContentText, TDocumentDefinitions } from "pdfmake/interfaces.js";
 import { parseMarkdown, type Run } from "./markdown.js";
 
 const require = createRequire(import.meta.url);
@@ -38,6 +38,13 @@ function runs(list: Run[]): ContentText[] {
   }));
 }
 
+/** A drawn checkbox for "- [ ]" / "- [x]" items (the font has no ballot-box glyphs). */
+function checkbox(checked: boolean): CanvasElement[] {
+  const box: CanvasElement = { type: "rect", x: 0, y: 3, w: 8.5, h: 8.5, r: 1.5, lineWidth: 0.9, lineColor: "#555555" };
+  const tick: CanvasElement = { type: "polyline", points: [{ x: 1.8, y: 7.3 }, { x: 3.8, y: 9.5 }, { x: 7, y: 4.8 }], lineWidth: 1.3, lineColor: ACCENT };
+  return checked ? [box, tick] : [box];
+}
+
 export async function markdownToPdf(title: string, markdown: string): Promise<Buffer> {
   const content: Content[] = [{ text: strip(title), style: "title" }];
 
@@ -51,9 +58,10 @@ export async function markdownToPdf(title: string, markdown: string): Promise<Bu
         break;
       case "list":
         for (const item of block.items) {
+          const isTask = item.label === "☐" || item.label === "☑";
           content.push({
             columns: [
-              { text: item.label, width: 16 },
+              isTask ? { canvas: checkbox(item.label === "☑"), width: 16 } : { text: item.label, width: 16 },
               { text: runs(item.runs), width: "*" },
             ],
             margin: [item.level * 16, 0, 0, 3],

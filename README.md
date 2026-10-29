@@ -67,7 +67,10 @@ The login is saved in `data/whatsapp-auth/`, so you only scan once.
 
 Friday only works (and only sends reminders) while it's running.
 
-- **On your Mac:** `caffeinate -i npm start` stops the Mac from sleeping while Friday runs.
+- **On your Mac, always on:** `scripts/macos-service.sh install` runs Friday in the background — it starts at login,
+  restarts if it stops, and keeps the Mac from idle-sleeping. Use `scripts/macos-service.sh logs` to watch it (and to
+  see the QR code the first time), `restart` after changing `.env`, `uninstall` to remove it.
+- **On your Mac, just for now:** `caffeinate -i npm start` in a terminal; Friday stops when you close it.
 - **On a server / always-on machine:** `docker compose up -d`, then `docker compose logs -f` to see the QR code the
   first time. Data is kept in `./data`.
 
