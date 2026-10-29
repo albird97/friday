@@ -1,0 +1,42 @@
+{
+  "name": "friday",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Friday: a personal Claude-powered assistant on WhatsApp",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "chat": "tsx src/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.3.0",
+    "@google/genai": "^2.31.0",
+    "baileys": "^7.0.0-rc14",
+    "better-sqlite3": "^13.0.3",
+    "croner": "^11.0.0",
+    "docx": "^9.15.0",
+    "dotenv": "^18.0.9",
+    "exceljs": "^4.4.0",
+    "marked": "^18.1.2",
+    "pdfmake": "^0.3.13",
+    "pino": "^10.4.0",
+    "pptxgenjs": "^4.0.1",
+    "qrcode-terminal": "^0.12.0",
+    "sharp": "^0.35.5",
+    "tsx": "^4.23.15",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^26.6.6",
+    "@types/pdfmake": "^0.3.3",
+    "@types/qrcode-terminal": "^0.12.2",
+    "typescript": "^7.0.2"
+  }
+}
