@@ -1,5 +1,6 @@
 import { ADMIN, claude, WIFE } from "./setup.js";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { beforeEach, describe, it } from "node:test";
 import { handleIncoming, type Incoming } from "../src/bot.js";
 import { parseDuration } from "../src/pause.js";
@@ -168,6 +169,19 @@ describe("secret admin commands", () => {
     answer("Oke.");
     await handleIncoming(inGroup(friend, "Friday, halo"), outbox);
     assert.doesNotMatch(JSON.stringify(claude.requests.at(-1)!.body.system), /# Style/);
+  });
+
+  it("/help shows the admin every command, and nobody else the admin ones", async () => {
+    const source = fs.readFileSync(new URL("../src/bot.ts", import.meta.url), "utf8");
+    const aliases = new Set(["/help", "/new", "/catalog"]);
+    const commands = [...source.matchAll(/case "(\/\w+)"/g)].map((m) => m[1]).filter((c) => !aliases.has(c));
+    assert.ok(commands.length >= 15);
+    await handleIncoming(dm(ADMIN, "/help"), outbox);
+    for (const command of commands) assert.match(sent[0].text!, new RegExp(`${command}\\b`), `${command} is missing from /help`);
+
+    await handleIncoming(inGroup(ADMIN, "/help"), outbox);
+    await handleIncoming(dm({ name: "Eko", number: "6285555555555" }, "/help"), outbox);
+    for (const reply of sent.slice(1)) assert.doesNotMatch(reply.text!, /\/status|\/usage/);
   });
 
   it("reads durations in Indonesian and English shorthand", () => {

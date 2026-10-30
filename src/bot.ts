@@ -101,6 +101,24 @@ async function processMessage(msg: Incoming, outbox: Outbox): Promise<void> {
   await respond(chat, content, outbox);
 }
 
+export const ADMIN_HELP = [
+  `_Admin (balasan selalu ke chat pribadi ini; di grup awali dengan @${config.BOT_NAME}):_`,
+  "/usage — biaya Claude per orang",
+  "/contacts — siapa saja yang boleh memakai Friday",
+  "/add <nama> <nomor> — izinkan orang baru",
+  "/remove <nama> — cabut izinnya",
+  "/katalog — perbarui katalog WhatsApp Business",
+  "",
+  "_Rahasia (tidak terlihat orang lain):_",
+  "/status — kesehatan, versi, biaya hari ini & bulan ini",
+  "/style chill | formal | funny | ngeyel | normal — gaya bicara di chat itu (/gaya juga bisa)",
+  "/diam 30m | 2j | 1h — di grup: Friday diam sementara (h = hari)",
+  "/bangun — di grup: akhiri /diam",
+  "/stop — darurat: Friday diam di semua chat",
+  "/lanjut — nyalakan lagi setelah /stop",
+  "/backup — kirim cadangan database",
+];
+
 /** Slash commands handled without Claude. Returns false for unknown commands, which go to Claude as text. */
 async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
   const { chat } = msg;
@@ -119,9 +137,8 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
           "",
           "/reset — start a fresh conversation (keeps memories and reminders)",
           "/id — show this chat's id and your number",
-          ...(admin && !chat.isGroup
-            ? ["", "_Admin:_", "/usage — Claude tokens per person", "/contacts — who can use me", "/add <name> <number> — allow someone", "/remove <name> — remove someone", "/katalog — update the WhatsApp Business catalog"]
-            : []),
+          // The admin sees every command, the unlisted ones too, but only in their private chat.
+          ...(admin && !chat.isGroup ? ["", ...ADMIN_HELP] : []),
         ].join("\n"),
       );
       return true;
