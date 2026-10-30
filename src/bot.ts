@@ -1,16 +1,22 @@
 import type { BetaContentBlockParam } from "@anthropic-ai/sdk/resources/beta/messages/messages.js";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { respond } from "./agent.js";
 import { config } from "./config.js";
 import sharp from "sharp";
 import { syncCatalog } from "./catalog.js";
 import { addContact, allContacts, isAdmin, removeContact, takeDailyQuota } from "./contacts.js";
+import { db } from "./db.js";
 import { imagesEnabled, saveImage } from "./images.js";
 import { confirmErrand, errandFor, errandIncoming, errandNotes } from "./errands.js";
 import { actionNotes, confirmAction } from "./onehub.js";
+import { EVERYWHERE, isPaused, parseDuration, pause, resume } from "./pause.js";
 import { deleteSession } from "./session.js";
+import { statusReport } from "./status.js";
 import { MAX_VOICE_BYTES, transcribe, transcriptionEnabled } from "./transcribe.js";
 import { usageReport } from "./usage.js";
-import { nowStamp } from "./time.js";
+import { formatDateTime, localDay, nowStamp } from "./time.js";
 import type { ChatContext, Outbox } from "./types.js";
 
 export type Media = {
@@ -58,6 +64,13 @@ export function handleIncoming(msg: Incoming, outbox: Outbox): Promise<void> {
 async function processMessage(msg: Incoming, outbox: Outbox): Promise<void> {
   const { chat } = msg;
   if (!msg.addressed) return;
+
+  // While paused (/diam, /stop) Friday stays quiet; only the admin's commands get through, so they can resume it.
+  const admin = isAdmin(chat.sender.number);
+  if (!(admin && msg.text.startsWith("/")) && isPaused(chat.chatId)) {
+    if (admin && !chat.isGroup) await outbox.sendText(chat.chatId, "⏸️ Friday sedang dihentikan (/stop). Kirim /lanjut untuk menyalakannya lagi.");
+    return;
+  }
 
   if (!chat.isGroup && !chat.sender.isContact) {
     // Strangers are ignored — unless Friday wrote to them first on someone's behalf (an errand).
@@ -141,6 +154,66 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
         await toAdmin(await syncCatalog(outbox.catalog));
       } catch (err) {
         await toAdmin(`⚠️ Katalog gagal diperbarui: ${err instanceof Error ? err.message : String(err)}\nPastikan nomor ini akun WhatsApp Business.`);
+      }
+      return true;
+    }
+    // Not listed in /help.
+    case "/status":
+      if (!admin) return false;
+      await toAdmin(statusReport());
+      return true;
+    case "/diam": {
+      if (!admin) return false;
+      if (!chat.isGroup) {
+        await toAdmin("Kirim /diam di grup yang mau didiamkan, misalnya: @Friday /diam 2j\nUntuk menghentikan Friday di semua chat: /stop");
+        return true;
+      }
+      const ms = parseDuration(args.join(" "));
+      if (!ms) {
+        await toAdmin("Format: /diam 30m, /diam 2j, atau /diam 1h (hari). Tanpa angka = 1 jam, paling lama 7 hari.");
+        return true;
+      }
+      const until = Date.now() + ms;
+      pause(chat.chatId, chat.chatName, until);
+      await toAdmin(`🤫 Friday diam di *${chat.chatName}* sampai ${formatDateTime(new Date(until))}.\nUntuk mengaktifkannya lebih cepat, kirim @Friday /bangun di grup itu.`);
+      return true;
+    }
+    case "/bangun": {
+      if (!admin) return false;
+      if (!chat.isGroup) {
+        await toAdmin("Kirim /bangun di grup yang sedang didiamkan. Kalau Friday dihentikan di semua chat, kirim /lanjut.");
+        return true;
+      }
+      await toAdmin(resume(chat.chatId) ? `🔊 Friday aktif lagi di *${chat.chatName}*.` : `Friday tidak sedang diam di *${chat.chatName}*.`);
+      return true;
+    }
+    case "/stop":
+      if (!admin) return false;
+      pause(EVERYWHERE, "Semua chat", null);
+      await toAdmin("⏸️ Friday berhenti membalas di semua chat (pribadi dan grup), termasuk balasan titip pesan. Pengingat tetap terkirim.\nKirim /lanjut untuk menyalakannya lagi.");
+      return true;
+    case "/lanjut":
+      if (!admin) return false;
+      await toAdmin(resume(EVERYWHERE) ? "▶️ Friday aktif lagi di semua chat." : "Friday tidak sedang dihentikan.");
+      return true;
+    case "/backup": {
+      if (!admin) return false;
+      const file = path.join(os.tmpdir(), `friday-backup-${process.pid}-${Date.now()}.db`);
+      try {
+        await db.backup(file);
+        await outbox.sendFile(outbox.chatIdFor(chat.sender.number), {
+          data: fs.readFileSync(file),
+          fileName: `friday-backup-${localDay()}.db`,
+          mimetype: "application/vnd.sqlite3",
+          caption:
+            "🗄️ Cadangan database Friday: kontak, ingatan, pengingat, polling, riwayat obrolan dan pemakaian. Login WhatsApp tidak termasuk.\n" +
+            "Berisi data pribadi semua pengguna, jadi simpan baik-baik dan jangan diteruskan.",
+        });
+      } catch (err) {
+        console.error("backup failed", err);
+        await toAdmin(`⚠️ Cadangan gagal dibuat: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        fs.rmSync(file, { force: true });
       }
       return true;
     }

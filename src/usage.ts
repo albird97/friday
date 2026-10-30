@@ -91,6 +91,12 @@ function totals(fromDay: string, toDay: string): Total[] {
   return [...people.values()].sort((a, b) => b.dollars - a.dollars);
 }
 
+/** Estimated dollars spent from one day to another (inclusive), and by how many people. */
+export function spending(fromDay: string, toDay: string): { dollars: number; people: number } {
+  const rows = totals(fromDay, toDay);
+  return { dollars: rows.reduce((a, r) => a + r.dollars, 0), people: rows.length };
+}
+
 /** 1234 → "1rb", 2_500_000 → "2,5jt". */
 export function short(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(".", ",")}jt`;

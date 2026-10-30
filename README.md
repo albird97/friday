@@ -114,6 +114,17 @@ Things to try:
 | `/remove <name>` | *(admin)* Remove someone added with `/add` |
 | `/katalog` | *(admin)* Put the features in `catalog/items.json` into Friday's WhatsApp Business catalog (adds new items, updates changed ones; WhatsApp reviews each) |
 
+Not listed in `/help` (admin only; answers always go to the admin's private chat, so nothing shows in a group):
+
+| Command | |
+|---|---|
+| `/status` | Uptime, running version, model, memory and database size, active reminders, today's and this month's estimated cost (also in rupiah, `USD_TO_IDR`), and what is paused |
+| `/diam [30m \| 2j \| 1h]` | In a group: Friday ignores that group for a while (default 1 hour, at most 7 days; `h` = hari, days) |
+| `/bangun` | In a group: end its `/diam` early |
+| `/stop` | Emergency stop: Friday ignores every chat (errand replies included) until `/lanjut`. Reminders still go out |
+| `/lanjut` | Undo `/stop` |
+| `/backup` | Send the admin a copy of Friday's database (contacts, memories, reminders, polls, conversations, usage; not the WhatsApp login) |
+
 ## Errands with people outside the contacts
 
 People listed in `ERRAND_USERS` can ask Friday, in their private chat, to deal with someone who isn't a contact —

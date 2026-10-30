@@ -47,6 +47,8 @@ const Env = z.object({
   // Tell the admin (never block anyone) when Claude spending today passes these estimated dollar amounts. 0 = off.
   USAGE_ALERT_DAILY_TOTAL: z.coerce.number().min(0).default(20),
   USAGE_ALERT_DAILY_PERSON: z.coerce.number().min(0).default(5),
+  // Only for showing dollar estimates in rupiah (/status).
+  USD_TO_IDR: z.coerce.number().positive().default(16_500),
 });
 
 const env = Env.parse(process.env);
