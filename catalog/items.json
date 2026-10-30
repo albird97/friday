@@ -1,0 +1,62 @@
+[
+  {
+    "id": "friday-01",
+    "name": "Tanya Apa Saja",
+    "description": "Tanya apa pun, Friday menjawab dan mencari info terbaru di internet: cuaca, berita, harga, jam buka, kurs.\n\nContoh: \"Cuaca Bandung akhir pekan ini gimana?\"",
+    "image": "01-tanya.jpg"
+  },
+  {
+    "id": "friday-02",
+    "name": "Pengingat",
+    "description": "Pengingat sekali atau berulang, untuk diri sendiri atau grup.\n\nContoh: \"Ingatkan aku bayar listrik tiap tanggal 25 jam 9 pagi.\"",
+    "image": "02-pengingat.jpg"
+  },
+  {
+    "id": "friday-03",
+    "name": "Dokumen Instan",
+    "description": "Friday membuatkan file PDF, Word, Excel, PowerPoint, atau CSV yang langsung dikirim di chat.\n\nContoh: \"Buatkan itinerary Bali 3 hari jadi PDF.\"",
+    "image": "03-dokumen.jpg"
+  },
+  {
+    "id": "friday-04",
+    "name": "Baca Foto & File",
+    "description": "Kirim foto, struk, atau PDF. Friday bisa menjelaskan, merangkum, menerjemahkan, atau menjadikannya tabel.\n\nContoh: (kirim foto menu) \"Terjemahkan ke bahasa Indonesia.\"",
+    "image": "04-foto-file.jpg"
+  },
+  {
+    "id": "friday-05",
+    "name": "Bikin & Edit Gambar",
+    "description": "Membuat gambar baru atau mengubah foto.\n\nContoh: \"Gambar kartu ulang tahun tema dinosaurus\" atau \"Hapus orang di belakang foto ini.\"",
+    "image": "05-gambar.jpg"
+  },
+  {
+    "id": "friday-06",
+    "name": "Voice Note",
+    "description": "Malas mengetik? Kirim voice note. Friday mengerti isinya dan membalas lewat chat.",
+    "image": "06-voice-note.jpg"
+  },
+  {
+    "id": "friday-07",
+    "name": "Polling Grup",
+    "description": "Kumpulkan siapa yang ikut atau pilih tanggal dengan polling, sekali ketuk.\n\nContoh: \"@Friday kumpulin yang bisa kongkow Minggu jam 07.30 di Kopi Kenangan.\"\nLalu: \"@Friday siapa aja yang ikut?\"",
+    "image": "07-polling.jpg"
+  },
+  {
+    "id": "friday-08",
+    "name": "Ingatan",
+    "description": "Friday mengingat hal penting untuk percakapan berikutnya.\n\nContoh: \"Ingat ya, aku alergi kacang.\"",
+    "image": "08-ingatan.jpg"
+  },
+  {
+    "id": "friday-09",
+    "name": "Titip Pesan",
+    "description": "Titip pesan atau pengingat untuk orang lain lewat Friday.\n\nContoh: \"Bilang ke Sarah aku pulang jam 8.\"",
+    "image": "09-titip-pesan.jpg"
+  },
+  {
+    "id": "friday-10",
+    "name": "Bantu Reservasi",
+    "description": "Friday menghubungi restoran atau toko untuk Anda, misalnya reservasi meja, lalu melaporkan hasilnya. Selalu minta konfirmasi dulu sebelum mengirim. (Fitur terbatas.)\n\nContoh: \"Reservasi meja 4 orang di Sushi Tei PIK Sabtu jam 7 malam.\"",
+    "image": "10-reservasi.jpg"
+  }
+]

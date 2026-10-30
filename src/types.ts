@@ -1,3 +1,5 @@
+import type { CatalogApi } from "./catalog.js";
+
 export type Sender = {
   number: string; // digits only, e.g. "6281234567890"
   name: string;
@@ -37,4 +39,6 @@ export interface Outbox {
   sendPoll?(chatId: string, poll: { question: string; options: string[]; multiple: boolean }): Promise<{ messageId: string; secret: Buffer }>;
   /** How many people besides the bot are in a group; undefined when unknown. */
   groupSize?(chatId: string): Promise<number | undefined>;
+  /** The bot's own WhatsApp Business catalog. */
+  catalog?: CatalogApi;
 }

@@ -2,6 +2,7 @@ import type { BetaContentBlockParam } from "@anthropic-ai/sdk/resources/beta/mes
 import { respond } from "./agent.js";
 import { config } from "./config.js";
 import sharp from "sharp";
+import { syncCatalog } from "./catalog.js";
 import { addContact, allContacts, isAdmin, removeContact, takeDailyQuota } from "./contacts.js";
 import { imagesEnabled, saveImage } from "./images.js";
 import { confirmErrand, errandFor, errandIncoming, errandNotes } from "./errands.js";
@@ -105,7 +106,7 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
           "/reset — start a fresh conversation (keeps memories and reminders)",
           "/id — show this chat's id and your number",
           ...(admin && !chat.isGroup
-            ? ["", "_Admin:_", "/usage — Claude tokens per person", "/contacts — who can use me", "/add <name> <number> — allow someone", "/remove <name> — remove someone"]
+            ? ["", "_Admin:_", "/usage — Claude tokens per person", "/contacts — who can use me", "/add <name> <number> — allow someone", "/remove <name> — remove someone", "/katalog — update the WhatsApp Business catalog"]
             : []),
         ].join("\n"),
       );
@@ -126,6 +127,21 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
           ? usageReport()
           : allContacts().map((c, i) => `${i === 0 ? "👑" : "-"} ${c.name} (+${c.number})`).join("\n") || "No contacts yet.";
       await toAdmin(answer);
+      return true;
+    }
+    case "/katalog":
+    case "/catalog": {
+      if (!admin) return false;
+      if (!outbox.catalog) {
+        await toAdmin("The catalog can only be updated on WhatsApp.");
+        return true;
+      }
+      await toAdmin("🛍️ Memperbarui katalog WhatsApp Business…");
+      try {
+        await toAdmin(await syncCatalog(outbox.catalog));
+      } catch (err) {
+        await toAdmin(`⚠️ Katalog gagal diperbarui: ${err instanceof Error ? err.message : String(err)}\nPastikan nomor ini akun WhatsApp Business.`);
+      }
       return true;
     }
     case "/add": {

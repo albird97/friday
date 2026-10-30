@@ -112,6 +112,7 @@ Things to try:
 | `/contacts` | *(admin)* Who can use Friday |
 | `/add <name> <number>` | *(admin)* Let someone use Friday, e.g. `/add Mom 6281234567890` |
 | `/remove <name>` | *(admin)* Remove someone added with `/add` |
+| `/katalog` | *(admin)* Put the features in `catalog/items.json` into Friday's WhatsApp Business catalog (adds new items, updates changed ones; WhatsApp reviews each) |
 
 ## Errands with people outside the contacts
 

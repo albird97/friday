@@ -22,6 +22,7 @@ import makeWASocket, {
 import pino from "pino";
 import qrcode from "qrcode-terminal";
 import type { Incoming, Media } from "./bot.js";
+import type { CatalogItem, Product as CatalogProduct } from "./catalog.js";
 import { config } from "./config.js";
 import { contactByNumber, isAdmin } from "./contacts.js";
 import { pollByMessage, recordVote, type Poll } from "./polls.js";
@@ -74,6 +75,17 @@ export function readVote(
   return undefined;
 }
 
+// Catalog items list features, not goods: no price (WhatsApp then shows none) and no country of origin.
+const toProduct = (item: CatalogItem, image: Buffer) =>
+  ({ name: item.name, description: item.description, retailerId: item.id, images: [image] }) as unknown as Parameters<WASocket["productUpdate"]>[1];
+const fromProduct = (p: Awaited<ReturnType<WASocket["productCreate"]>>): CatalogProduct => ({
+  id: p.id,
+  retailerId: p.retailerId,
+  name: p.name,
+  description: p.description,
+  status: p.reviewStatus?.whatsapp,
+});
+
 /** Connects to WhatsApp as a linked device and feeds incoming messages to `onMessage`. */
 export async function startWhatsApp(onMessage: (msg: Incoming, outbox: Outbox) => void): Promise<Outbox> {
   let sock: WASocket;
@@ -111,6 +123,18 @@ export async function startWhatsApp(onMessage: (msg: Incoming, outbox: Outbox) =
     async groupSize(chatId) {
       const meta = await sock.groupMetadata(chatId).catch(() => undefined);
       return meta ? meta.participants.length - 1 : undefined;
+    },
+    catalog: {
+      async list() {
+        const { products } = await sock.getCatalog({ limit: 100 });
+        return products.map(fromProduct);
+      },
+      async create(item, image) {
+        return fromProduct(await sock.productCreate({ ...toProduct(item, image), originCountryCode: undefined }));
+      },
+      async update(productId, item, image) {
+        return fromProduct(await sock.productUpdate(productId, toProduct(item, image)));
+      },
     },
   };
 
