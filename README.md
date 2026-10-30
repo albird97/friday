@@ -123,7 +123,7 @@ Not listed in `/help` (admin only; answers always go to the admin's private chat
 | `/bangun` | In a group: end its `/diam` early |
 | `/stop` | Emergency stop: Friday ignores every chat (errand replies included) until `/lanjut`. Reminders still go out |
 | `/lanjut` | Undo `/stop` |
-| `/style [chill \| formal \| funny \| ngeyel \| normal]` | How Friday talks in this chat (group or private). `ngeyel` is devil's advocate: it argues against whatever is said, but still does tasks properly, never invents facts and answers health, safety, legal and money questions straight. Takes effect from the next message; `/style` alone shows the current one |
+| `/style [chill \| formal \| funny \| ngeyel \| normal]` | How Friday talks in this chat (group or private). `ngeyel` is devil's advocate: it argues against whatever is said, but still does tasks properly, never invents facts, answers in one voice (no separate "serious" part) and on health, safety, legal and money always argues for the careful side. Takes effect from the next message; `/style` alone shows the current one |
 | `/backup` | Send the admin a copy of Friday's database (contacts, memories, reminders, polls, conversations, usage; not the WhatsApp login) |
 
 ## Errands with people outside the contacts
