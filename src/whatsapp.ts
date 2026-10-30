@@ -1,11 +1,14 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import makeWASocket, {
   Browsers,
   decryptPollVote,
   DisconnectReason,
   downloadMediaMessage,
   fetchLatestBaileysVersion,
+  getUrlFromDirectPath,
   isJidGroup,
   isLidUser,
   isPnUser,
@@ -76,7 +79,7 @@ export function readVote(
 }
 
 // Catalog items list features, not goods: no price (WhatsApp then shows none) and no country of origin.
-const toProduct = (item: CatalogItem, image: Buffer) =>
+const toProduct = (item: CatalogItem, image: { url: string }) =>
   ({ name: item.name, description: item.description, retailerId: item.id, images: [image] }) as unknown as Parameters<WASocket["productUpdate"]>[1];
 const fromProduct = (p: Awaited<ReturnType<WASocket["productCreate"]>>): CatalogProduct => ({
   id: p.id,
@@ -130,13 +133,32 @@ export async function startWhatsApp(onMessage: (msg: Incoming, outbox: Outbox) =
         return products.map(fromProduct);
       },
       async create(item, image) {
-        return fromProduct(await sock.productCreate({ ...toProduct(item, image), originCountryCode: undefined }));
+        return fromProduct(await sock.productCreate({ ...toProduct(item, await uploadCatalogImage(image)), originCountryCode: undefined }));
       },
       async update(productId, item, image) {
-        return fromProduct(await sock.productUpdate(productId, toProduct(item, image)));
+        return fromProduct(await sock.productUpdate(productId, toProduct(item, await uploadCatalogImage(image))));
       },
     },
   };
+
+  /**
+   * Uploads a catalog picture ourselves: Baileys' own product upload sends its temp file before writing it out, so
+   * WhatsApp gets an empty file. A finished .whatsapp.net URL makes Baileys skip its upload.
+   */
+  async function uploadCatalogImage(image: Buffer): Promise<{ url: string }> {
+    const file = path.join(os.tmpdir(), `friday-catalog-${randomBytes(8).toString("hex")}`);
+    fs.writeFileSync(file, image);
+    try {
+      const { directPath } = await sock.waUploadToServer(file, {
+        mediaType: "product-catalog-image",
+        fileEncSha256B64: createHash("sha256").update(image).digest("base64"),
+        timeoutMs: 30_000,
+      });
+      return { url: getUrlFromDirectPath(directPath) };
+    } finally {
+      fs.rmSync(file, { force: true });
+    }
+  }
 
   /** Phone number (digits) behind a sender id; WhatsApp sometimes hides it behind a "LID". */
   async function phoneNumberOf(jid: string, alt: string | undefined): Promise<string> {
