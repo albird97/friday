@@ -126,6 +126,50 @@ describe("secret admin commands", () => {
     assert.equal(sent.at(-1)!.text, "Masih aktif", "her /stop didn't stop anything");
   });
 
+  it("/style changes how Friday talks in that chat from the next message, keeping the conversation's context", async () => {
+    const system = () => JSON.stringify(claude.requests.at(-1)!.body.system);
+    answer("Siap.");
+    await handleIncoming(inGroup(ADMIN, "Friday, kita ke Bali yuk"), outbox);
+    assert.doesNotMatch(system(), /# Style/);
+
+    sent = [] as Sent[];
+    await handleIncoming(inGroup(ADMIN, "/style ngeyel"), outbox);
+    assert.equal(sent[0].chatId, private_(ADMIN.number));
+    assert.match(sent[0].text!, /\*Kongkow\* sekarang \*ngeyel\*/);
+    answer("Eits, belum tentu Bali!");
+    await handleIncoming(inGroup(ADMIN, "Friday, Bali paling seru kan?"), outbox);
+    assert.match(system(), /devil's advocate/);
+    assert.match(system(), /Earlier in this chat[\s\S]*kita ke Bali yuk/, "the earlier talk carries over as a recap");
+
+    sent = [] as Sent[];
+    await handleIncoming(dm(ADMIN, "/status"), outbox);
+    assert.match(sent[0].text!, /Gaya khusus\*\n- Kongkow: ngeyel/);
+
+    answer("Halo.");
+    await handleIncoming(dm(ADMIN, "halo"), outbox);
+    assert.doesNotMatch(system(), /# Style/, "other chats keep the normal voice");
+
+    sent = [] as Sent[];
+    await handleIncoming(inGroup(ADMIN, "/style"), outbox);
+    assert.match(sent[0].text!, /\*ngeyel\*[\s\S]*Pilihan: chill, formal, funny, ngeyel, normal/);
+    await handleIncoming(inGroup(ADMIN, "/style galak"), outbox);
+    assert.match(sent[1].text!, /tidak ada/);
+    await handleIncoming(inGroup(ADMIN, "/style normal"), outbox);
+    answer("Oke.");
+    await handleIncoming(inGroup(ADMIN, "Friday, jadi ke Bali"), outbox);
+    assert.doesNotMatch(system(), /# Style/);
+  });
+
+  it("only the admin can change the style", async () => {
+    const friend = { name: "Dina", number: "6284444444444" };
+    answer("Hmm?");
+    await handleIncoming(inGroup(friend, "/style ngeyel"), outbox);
+    assert.equal(claude.requests.length, 1, "it went to Claude as ordinary text");
+    answer("Oke.");
+    await handleIncoming(inGroup(friend, "Friday, halo"), outbox);
+    assert.doesNotMatch(JSON.stringify(claude.requests.at(-1)!.body.system), /# Style/);
+  });
+
   it("reads durations in Indonesian and English shorthand", () => {
     assert.equal(parseDuration(""), 3600_000);
     assert.equal(parseDuration("30m"), 30 * 60_000);

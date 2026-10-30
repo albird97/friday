@@ -12,8 +12,9 @@ import { imagesEnabled, saveImage } from "./images.js";
 import { confirmErrand, errandFor, errandIncoming, errandNotes } from "./errands.js";
 import { actionNotes, confirmAction } from "./onehub.js";
 import { EVERYWHERE, isPaused, parseDuration, pause, resume } from "./pause.js";
-import { deleteSession } from "./session.js";
+import { deleteSession, expireSession } from "./session.js";
 import { statusReport } from "./status.js";
+import { isStyle, setStyle, STYLES, styleOf } from "./styles.js";
 import { MAX_VOICE_BYTES, transcribe, transcriptionEnabled } from "./transcribe.js";
 import { usageReport } from "./usage.js";
 import { formatDateTime, localDay, nowStamp } from "./time.js";
@@ -185,6 +186,25 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
         return true;
       }
       await toAdmin(resume(chat.chatId) ? `🔊 Friday aktif lagi di *${chat.chatName}*.` : `Friday tidak sedang diam di *${chat.chatName}*.`);
+      return true;
+    }
+    case "/style":
+    case "/gaya": {
+      if (!admin) return false;
+      const choice = args[0]?.toLowerCase();
+      const options = `Pilihan: ${[...Object.keys(STYLES), "normal"].join(", ")}`;
+      const where = chat.isGroup ? `*${chat.chatName}*` : "chat ini";
+      if (!choice) {
+        await toAdmin(`🎭 Gaya Friday di ${where}: *${styleOf(chat.chatId) ?? "normal"}*\n${options}\nContoh: /style chill`);
+        return true;
+      }
+      if (choice !== "normal" && !isStyle(choice)) {
+        await toAdmin(`Gaya "${choice}" tidak ada. ${options}`);
+        return true;
+      }
+      setStyle(chat.chatId, chat.chatName, choice === "normal" ? undefined : choice);
+      expireSession(chat.chatId);
+      await toAdmin(`🎭 Gaya Friday di ${where} sekarang *${choice}*, mulai pesan berikutnya.`);
       return true;
     }
     case "/stop":

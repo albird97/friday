@@ -4,6 +4,7 @@ import { imagesEnabled } from "./images.js";
 import type { Memory } from "./memory.js";
 import { errandsAllowed } from "./errands.js";
 import { onehubAllowed } from "./onehub.js";
+import { STYLES, styleOf } from "./styles.js";
 import type { ChatContext } from "./types.js";
 
 const name = config.BOT_NAME;
@@ -94,6 +95,8 @@ reply to you, or start with "${name}". Address people by name when it helps.`
     : `You're in a private chat with ${chat.sender.name}.`;
 
   const sections = [BASE.replace("{{IMAGES}}", imagesEnabled ? IMAGES_ON : IMAGES_OFF), `# This chat\n${where}\n${contacts}`];
+  const style = styleOf(chat.chatId);
+  if (style) sections.push(STYLES[style]);
   // Groups always get this: their prompt is written once for whoever spoke first, and everyone reads the answers.
   if (chat.isGroup || !isAdmin(chat.sender.number)) {
     const admin = allContacts()[0]?.name ?? "the admin";

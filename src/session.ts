@@ -33,6 +33,11 @@ export function deleteSession(chatId: string): void {
   db.prepare("DELETE FROM sessions WHERE chat_id = ?").run(chatId);
 }
 
+/** Makes the next message start a new session (with a recap of this one), e.g. so a changed system prompt applies. */
+export function expireSession(chatId: string): void {
+  db.prepare("UPDATE sessions SET updated_at = 0 WHERE chat_id = ?").run(chatId);
+}
+
 export function isStale(s: Session, now = Date.now()): boolean {
   return now - s.updatedAt > config.SESSION_IDLE_HOURS * 3_600_000 || s.tokens > config.SESSION_MAX_TOKENS;
 }

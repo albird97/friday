@@ -130,6 +130,11 @@ db.exec(`
     until       INTEGER
   );
   -- until = NULL: paused until the admin resumes it.
+  CREATE TABLE IF NOT EXISTS chat_styles (
+    chat_id     TEXT PRIMARY KEY,
+    chat_name   TEXT NOT NULL,
+    style       TEXT NOT NULL
+  );
 `);
 
 // Columns added after a table first shipped: SQLite's CREATE TABLE IF NOT EXISTS won't add them to an existing one.

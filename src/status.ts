@@ -4,6 +4,7 @@ import path from "node:path";
 import { config } from "./config.js";
 import { db } from "./db.js";
 import { activePauses, describePause } from "./pause.js";
+import { allStyles } from "./styles.js";
 import { formatDateTime, localDay } from "./time.js";
 import { spending, usd } from "./usage.js";
 
@@ -45,6 +46,7 @@ export function statusReport(now = new Date()): string {
   const month = spending(`${today.slice(0, 7)}-01`, `${today.slice(0, 7)}-31`);
   const reminders = (db.prepare("SELECT COUNT(*) AS n FROM reminders WHERE active = 1").get() as { n: number }).n;
   const pauses = activePauses(now.getTime());
+  const styles = allStyles();
   return [
     [
       "🩺 *Status Friday*",
@@ -61,5 +63,6 @@ export function statusReport(now = new Date()): string {
       `_Kurs ${config.USD_TO_IDR.toLocaleString("id-ID")}; rincian per orang: /usage_`,
     ].join("\n"),
     pauses.length ? ["⏸️ *Didiamkan*", ...pauses.map((p) => `- ${describePause(p)}`)].join("\n") : "🔊 Tidak ada chat yang didiamkan.",
+    ...(styles.length ? [["🎭 *Gaya khusus*", ...styles.map((s) => `- ${s.chatName}: ${s.style}`)].join("\n")] : []),
   ].join("\n\n");
 }
