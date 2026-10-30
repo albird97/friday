@@ -28,7 +28,8 @@ export async function syncCatalog(api: CatalogApi, dir = DIR): Promise<string> {
   const existing = await api.list();
   const lines: string[] = [];
   let changed = 0;
-  for (const item of catalogItems(dir)) {
+  const items = catalogItems(dir);
+  for (const [i, item] of items.entries()) {
     const current = existing.find((p) => p.retailerId === item.id);
     const image = () => fs.readFileSync(path.join(dir, item.image));
     try {
@@ -44,7 +45,11 @@ export async function syncCatalog(api: CatalogApi, dir = DIR): Promise<string> {
         lines.push(`✅ ${item.name}: ${STATUS[current.status ?? ""] ?? current.status ?? "tidak berubah"}`);
       }
     } catch (err) {
+      console.error(`catalog: ${item.id} failed`, err);
       lines.push(`⚠️ ${item.name}: gagal (${err instanceof Error ? err.message : String(err)})`);
+      // One failure usually means WhatsApp refuses them all; each attempt can take a minute to time out.
+      if (i < items.length - 1) lines.push(`⏸️ ${items.length - i - 1} item lain belum dicoba.`);
+      break;
     }
   }
   const note = changed ? "\n\n_Item baru atau yang diubah ditinjau WhatsApp dulu (biasanya beberapa jam) sebelum terlihat._" : "";

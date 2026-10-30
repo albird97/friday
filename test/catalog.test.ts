@@ -42,6 +42,8 @@ describe("WhatsApp Business catalog", () => {
     assert.ok(!calls.some((c) => c.includes(first.id)), "unchanged items aren't re-sent (that would trigger another review)");
     assert.ok(calls.includes(`update p2 ${second.id}`));
     assert.ok(calls.includes(`create ${third.id}`));
+    assert.equal(calls.length, 2, "stops at the first failure");
+    assert.match(report, /⏸️ \d+ item lain belum dicoba/);
     assert.match(report, new RegExp(`✅ ${first.name}: disetujui`));
     assert.match(report, new RegExp(`✏️ ${second.name}: diperbarui`));
     assert.match(report, new RegExp(`⚠️ ${third.name.replace(/[&]/g, "\\$&")}: gagal \\(rejected\\)`));

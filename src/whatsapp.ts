@@ -81,6 +81,11 @@ export function readVote(
 // Catalog items list features, not goods: no price (WhatsApp then shows none) and no country of origin.
 const toProduct = (item: CatalogItem, image: { url: string }) =>
   ({ name: item.name, description: item.description, retailerId: item.id, images: [image] }) as unknown as Parameters<WASocket["productUpdate"]>[1];
+// Baileys returns nothing when WhatsApp doesn't answer within a minute, then fails reading the missing reply.
+const unanswered = <T>(request: Promise<T>) =>
+  request.catch((err: unknown) => {
+    throw err instanceof TypeError ? new Error("WhatsApp tidak menjawab dalam 1 menit") : err;
+  });
 const fromProduct = (p: Awaited<ReturnType<WASocket["productCreate"]>>): CatalogProduct => ({
   id: p.id,
   retailerId: p.retailerId,
@@ -133,10 +138,12 @@ export async function startWhatsApp(onMessage: (msg: Incoming, outbox: Outbox) =
         return products.map(fromProduct);
       },
       async create(item, image) {
-        return fromProduct(await sock.productCreate({ ...toProduct(item, await uploadCatalogImage(image)), originCountryCode: undefined }));
+        const picture = await uploadCatalogImage(image);
+        console.log(`catalog: ${item.id} picture uploaded, creating the item`);
+        return fromProduct(await unanswered(sock.productCreate({ ...toProduct(item, picture), originCountryCode: undefined })));
       },
       async update(productId, item, image) {
-        return fromProduct(await sock.productUpdate(productId, toProduct(item, await uploadCatalogImage(image))));
+        return fromProduct(await unanswered(sock.productUpdate(productId, toProduct(item, await uploadCatalogImage(image)))));
       },
     },
   };
@@ -149,6 +156,7 @@ export async function startWhatsApp(onMessage: (msg: Incoming, outbox: Outbox) =
     const file = path.join(os.tmpdir(), `friday-catalog-${randomBytes(8).toString("hex")}`);
     fs.writeFileSync(file, image);
     try {
+      console.log(`catalog: uploading a ${Math.round(image.length / 1024)} KB picture`);
       const { directPath } = await sock.waUploadToServer(file, {
         mediaType: "product-catalog-image",
         fileEncSha256B64: createHash("sha256").update(image).digest("base64"),
