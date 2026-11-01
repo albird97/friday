@@ -134,6 +134,31 @@ db.exec(`
     key         TEXT PRIMARY KEY,
     value       TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS google_accounts (
+    number        TEXT PRIMARY KEY,
+    email         TEXT NOT NULL,
+    refresh_token TEXT NOT NULL,
+    scopes        TEXT NOT NULL,
+    connected_at  INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS google_links (
+    state      TEXT PRIMARY KEY,
+    number     TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS google_pending (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id    TEXT NOT NULL,
+    number     TEXT NOT NULL,
+    code       TEXT NOT NULL,
+    tool       TEXT NOT NULL,
+    input      TEXT NOT NULL,
+    summary    TEXT NOT NULL,
+    status     TEXT NOT NULL,
+    result     TEXT,
+    noted      INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS chat_styles (
     chat_id     TEXT PRIMARY KEY,
     chat_name   TEXT NOT NULL,

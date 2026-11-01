@@ -4,6 +4,7 @@ import { imageProvider, pruneImages } from "./images.js";
 import { hideSignalSessionDumps } from "./logging.js";
 import { currentModel, familyOf, latestModel, setModel } from "./model.js";
 import { startReminderLoop } from "./reminders.js";
+import { startWeb } from "./web.js";
 import { expireChatSessions } from "./session.js";
 import { onUsageAlert } from "./usage.js";
 import { startWhatsApp } from "./whatsapp.js";
@@ -24,6 +25,7 @@ console.log(
 pruneImages();
 const outbox = await startWhatsApp((msg, out) => void handleIncoming(msg, out));
 startReminderLoop(outbox);
+if (config.PUBLIC_URL) startWeb(outbox);
 onUsageAlert(async (text) => {
   const admin = config.contacts[0];
   if (admin) await outbox.sendText(outbox.chatIdFor(admin.number), text);

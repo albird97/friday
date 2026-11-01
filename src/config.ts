@@ -44,6 +44,14 @@ const Env = z.object({
   ERRAND_USERS: z.string().default(""),
   // New errands per day across everyone — messaging strangers a lot gets a number flagged as spam.
   ERRAND_DAILY_LIMIT: z.coerce.number().int().min(0).default(10),
+  // Google: each contact links their own account with /google. Client id and secret come from the Google Cloud project;
+  // GOOGLE_TOKEN_KEY (64 hex characters, `openssl rand -hex 32`) encrypts their tokens. All empty = Google is off.
+  GOOGLE_CLIENT_ID: z.string().default(""),
+  GOOGLE_CLIENT_SECRET: z.string().default(""),
+  GOOGLE_TOKEN_KEY: z.string().default(""),
+  // Friday's public address, e.g. https://fridayai.my.id. Its pages (privacy policy, Google's redirect) listen on WEB_PORT.
+  PUBLIC_URL: z.string().default("").transform((url) => url.replace(/\/+$/, "")),
+  WEB_PORT: z.coerce.number().int().positive().default(3210),
   // Tell the admin (never block anyone) when Claude spending today passes these estimated dollar amounts. 0 = off.
   USAGE_ALERT_DAILY_TOTAL: z.coerce.number().min(0).default(20),
   USAGE_ALERT_DAILY_PERSON: z.coerce.number().min(0).default(5),

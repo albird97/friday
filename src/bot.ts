@@ -11,6 +11,8 @@ import { db } from "./db.js";
 import { imagesEnabled, saveImage } from "./images.js";
 import { currentModel, FAMILIES, isFamily, latestModel, setModel } from "./model.js";
 import { confirmErrand, errandFor, errandIncoming, errandNotes } from "./errands.js";
+import { connectMessage, disconnect, googleAccount, googleAllowed, googleEnabled } from "./google.js";
+import { confirmGoogle, googleNotes } from "./googleapps.js";
 import { actionNotes, confirmAction } from "./onehub.js";
 import { EVERYWHERE, isPaused, parseDuration, pause, resume } from "./pause.js";
 import { deleteSession, expireChatSessions, expireSession } from "./session.js";
@@ -90,6 +92,7 @@ async function processMessage(msg: Incoming, outbox: Outbox): Promise<void> {
 
   if (msg.text.startsWith("/") && (await runCommand(msg, outbox))) return;
   if (await confirmErrand(chat, msg.text, outbox)) return;
+  if (await confirmGoogle(chat, msg.text, outbox)) return;
   if (await confirmAction(chat, msg.text, outbox)) return;
 
   if (!takeDailyQuota(chat.sender.number)) {
@@ -99,7 +102,7 @@ async function processMessage(msg: Incoming, outbox: Outbox): Promise<void> {
 
   const content = await toContent(msg);
   if (!content) return;
-  for (const notes of [errandNotes(chat), actionNotes(chat)]) if (notes) content.unshift({ type: "text", text: notes });
+  for (const notes of [errandNotes(chat), actionNotes(chat), googleNotes(chat)]) if (notes) content.unshift({ type: "text", text: notes });
   await respond(chat, content, outbox);
 }
 
@@ -140,6 +143,7 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
           "",
           "/reset — start a fresh conversation (keeps memories and reminders)",
           "/id — show this chat's id and your number",
+          ...(googleEnabled ? ["/google — hubungkan akun Google milikmu (/google putus untuk memutus)"] : []),
           // The admin sees every command, the unlisted ones too, but only in their private chat.
           ...(admin && !chat.isGroup ? ["", ...ADMIN_HELP] : []),
         ].join("\n"),
@@ -179,6 +183,23 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
       return true;
     }
     // Not listed in /help.
+    case "/google": {
+      if (!googleEnabled) return false;
+      if (!googleAllowed(chat)) {
+        await reply("Akun Google hanya bisa dihubungkan dan dipakai di chat pribadi dengan saya.");
+        return true;
+      }
+      const account = googleAccount(chat.sender.number);
+      if (args[0]?.toLowerCase() === "putus") {
+        const gone = await disconnect(chat.sender.number, chat.chatId);
+        await reply(gone ? "✅ Akses Google diputus, dan riwayat chat ini dihapus dari server." : "Belum ada akun Google yang terhubung.");
+      } else if (account) {
+        await reply(`Akun Google terhubung: ${account.email}\nKirim /google putus untuk memutusnya.`);
+      } else {
+        await reply(connectMessage(chat.sender.number, allContacts()[0]?.name ?? "admin"));
+      }
+      return true;
+    }
     case "/status":
       if (!admin) return false;
       await toAdmin(statusReport());
@@ -300,6 +321,7 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
     case "/remove": {
       if (!admin) return false;
       const result = removeContact(args.join(" "));
+      if (result.removed) await disconnect(result.removed.number, outbox.chatIdFor(result.removed.number));
       await toAdmin(result.removed ? `Removed ${result.removed.name}.` : (result.error ?? "Couldn't remove that contact."));
       return true;
     }

@@ -167,6 +167,21 @@ memories — others can't see them (though as the host, the data lives on your m
 except the admin is limited to `DAILY_MESSAGE_LIMIT` messages a day (50 by default). People who aren't contacts are
 ignored in private chats; Friday logs their number so you can `/add` them.
 
+## Google apps
+
+Each contact links their own Google account by sending `/google` in their private chat, and `/google putus` ends it.
+Friday then works with that person's Calendar, Tasks, Gmail, Drive, Docs, Sheets, Slides, Forms, Contacts and YouTube,
+only in their private chat. The account is found from the sender's number, so nobody can reach someone else's. Reading
+runs straight away. Anything that changes something gets a preview and needs a `YA 1234` reply, checked by code rather
+than by Claude. Tokens are encrypted with `GOOGLE_TOKEN_KEY`.
+
+On the server, after pointing the domain's DNS at it and creating a Web OAuth client in the Google Cloud project:
+
+```bash
+sudo /opt/friday/app/scripts/linux-service.sh web fridayai.my.id
+sudo /opt/friday/app/scripts/linux-service.sh google fridayai.my.id
+```
+
 ## Costs
 
 - **Claude** is pay-as-you-go on your API key (there's no free tier). With Opus 5.5 a typical message costs roughly

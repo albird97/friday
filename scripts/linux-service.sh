@@ -143,6 +143,54 @@ case "${1:-}" in
     systemctl restart "$NAME"
     echo "Restarted."
     ;;
+  web)
+    # HTTPS for Friday's public pages. Its own nginx site, so the server's other sites aren't touched.
+    DOMAIN="${2:?Usage: sudo $0 web <domain>}"
+    SITE="/etc/nginx/sites-available/$NAME"
+    cat > "$SITE" <<EOF
+server {
+    listen 80;
+    listen [::]:80;
+    server_name $DOMAIN;
+    location / {
+        limit_except GET { deny all; }
+        proxy_pass http://127.0.0.1:3210;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOF
+    ln -sf "$SITE" "/etc/nginx/sites-enabled/$NAME"
+    if ! nginx -t; then
+      rm -f "$SITE" "/etc/nginx/sites-enabled/$NAME"
+      echo "nginx rejected the new site, so it was removed and nothing changed." >&2
+      exit 1
+    fi
+    systemctl reload nginx
+    certbot --nginx -d "$DOMAIN" --non-interactive --redirect
+    echo "https://$DOMAIN now reaches Friday."
+    ;;
+  google)
+    # Sets up Google sign-in. Reads the secret without showing it; the token key is made here and never printed.
+    DOMAIN="${2:?Usage: sudo $0 google <domain>}"
+    ENV="$APP/.env"
+    set_env() {
+      grep -v "^$1=" "$ENV" > "$ENV.new" || true
+      printf '%s=%s\n' "$1" "$2" >> "$ENV.new"
+      cat "$ENV.new" > "$ENV"
+      rm -f "$ENV.new"
+    }
+    read -r -p "Google client ID: " CLIENT_ID
+    read -r -s -p "Google client secret (hidden): " CLIENT_SECRET
+    echo
+    set_env PUBLIC_URL "https://$DOMAIN"
+    set_env GOOGLE_CLIENT_ID "$CLIENT_ID"
+    set_env GOOGLE_CLIENT_SECRET "$CLIENT_SECRET"
+    # Replacing an existing key would make everyone's saved tokens unreadable.
+    grep -q '^GOOGLE_TOKEN_KEY=[0-9a-f]\{64\}$' "$ENV" || set_env GOOGLE_TOKEN_KEY "$(openssl rand -hex 32)"
+    systemctl restart "$NAME"
+    echo "Google sign-in is on. Friday restarted."
+    ;;
   logs)
     journalctl -u "$NAME" -n 50 -f -o cat
     ;;
@@ -157,7 +205,7 @@ case "${1:-}" in
     echo "Friday's service is removed. Its files are still in $HOME_DIR."
     ;;
   *)
-    echo "Usage: sudo $0 install|update|restart|logs|backup|uninstall" >&2
+    echo "Usage: sudo $0 install|update|restart|logs|backup|web|google|uninstall" >&2
     exit 1
     ;;
 esac
