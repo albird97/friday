@@ -53,8 +53,6 @@ export function heroChat(root: HTMLElement): void {
     scrollTrigger: { trigger: root, start: "top top", end: "bottom top", scrub: true },
   });
 
-  gsap.from(".sun--day", { autoAlpha: 0, scale: 0.72, duration: 2.4, ease: "expo.out" });
-
   if (!matchMedia("(pointer: fine)").matches) return;
   const turnY = gsap.quickTo(phone, "rotationY", { duration: 0.9, ease: "power3" });
   const turnX = gsap.quickTo(phone, "rotationX", { duration: 0.9, ease: "power3" });

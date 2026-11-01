@@ -77,6 +77,16 @@ html.motion .footer {
   will-change: transform;
 }
 
+html.intro .sun--day {
+  animation: sun-in 2.4s var(--ease-out) backwards;
+}
+
+@keyframes sun-in {
+  from {
+    opacity: 0;
+  }
+}
+
 .sun--dawn {
   bottom: -46vmin;
   left: 50%;
