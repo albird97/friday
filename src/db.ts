@@ -38,6 +38,11 @@ db.exec(`
     count       INTEGER NOT NULL,
     PRIMARY KEY (number, day)
   );
+  CREATE TABLE IF NOT EXISTS access_requests (
+    number      TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    day         TEXT NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS images (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     chat_id     TEXT NOT NULL,

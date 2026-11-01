@@ -2,6 +2,7 @@ import type { BetaContentBlockParam } from "@anthropic-ai/sdk/resources/beta/mes
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { handleAccessRequest } from "./access.js";
 import { respond } from "./agent.js";
 import { config } from "./config.js";
 import sharp from "sharp";
@@ -85,6 +86,7 @@ async function processMessage(msg: Incoming, outbox: Outbox): Promise<void> {
       await errandIncoming(errand, chat, msg.text || `[${msg.media?.kind ?? "message"}]`, content, outbox);
       return;
     }
+    if (await handleAccessRequest(chat, msg.text, outbox)) return;
     console.log(`Ignored a private message from ${chat.sender.name} (+${chat.sender.number}), who isn't a contact. To allow them, send Friday: /add <name> ${chat.sender.number}`);
     return;
   }

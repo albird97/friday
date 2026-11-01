@@ -44,6 +44,8 @@ const Env = z.object({
   ERRAND_USERS: z.string().default(""),
   // New errands per day across everyone — messaging strangers a lot gets a number flagged as spam.
   ERRAND_DAILY_LIMIT: z.coerce.number().int().min(0).default(10),
+  // Access requests from the website answered per day. Each one is a reply to a stranger who wrote first.
+  ACCESS_REQUEST_DAILY_LIMIT: z.coerce.number().int().min(0).default(20),
   // Google: each contact links their own account with /google. Client id and secret come from the Google Cloud project;
   // GOOGLE_TOKEN_KEY (64 hex characters, `openssl rand -hex 32`) encrypts their tokens. All empty = Google is off.
   GOOGLE_CLIENT_ID: z.string().default(""),

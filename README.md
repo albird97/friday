@@ -167,6 +167,10 @@ memories — others can't see them (though as the host, the data lives on your m
 except the admin is limited to `DAILY_MESSAGE_LIMIT` messages a day (50 by default). People who aren't contacts are
 ignored in private chats; Friday logs their number so you can `/add` them.
 
+The website's "Minta akses" button opens WhatsApp with a sentence already typed. Friday answers that sentence once per
+number with a fixed text (no Claude, no cost) and tells the admin, who decides with `/add`.
+`ACCESS_REQUEST_DAILY_LIMIT` (20 by default) caps how many it answers per day.
+
 ## Google apps
 
 Each contact links their own Google account by sending `/google` in their private chat, and `/google putus` ends it.
@@ -208,6 +212,23 @@ Everything is in `data/` (not committed to git):
 - `images/` — photos and pictures, kept 30 days so they can be edited
 
 Back up `data/` to keep everything when moving machines.
+
+## Website
+
+The landing page at https://fridayai.my.id lives in `website/` (Astro and GSAP) with its own `package.json`, so its
+dependencies never reach the bot. It reads Friday's features from `catalog/items.json` and their example chats from
+`website/src/content/demos.json`, which keeps the WhatsApp catalog and the site one list.
+
+```bash
+cd website
+npm install
+npm run dev     # needs the Node version in website/.nvmrc
+npm test        # first time: npx playwright install chromium webkit
+```
+
+`scripts/deploy-website.sh` builds on your machine and copies the result to the server, because that server also runs
+other production apps. On the server, `sudo /opt/friday/app/scripts/linux-service.sh web <domain>` writes the nginx
+site: static files for the page, while `/privacy` and `/oauth/` go to Friday itself on `WEB_PORT`.
 
 ## Development
 

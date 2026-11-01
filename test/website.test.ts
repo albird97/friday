@@ -44,6 +44,11 @@ describe("website stays in step with Friday", () => {
     assert.deepEqual(unknown, [], "New feature? Classify it in website/src/content/feature-map.json as a catalog id, internal or pending.");
   });
 
+  it("opens WhatsApp with the sentence Friday recognises", () => {
+    const access = fs.readFileSync(path.join(ROOT, "src", "access.ts"), "utf8").toLowerCase();
+    assert.ok(access.includes(site.requestText.toLowerCase()));
+  });
+
   it("keeps private things off the public page", () => {
     const copy = fs
       .readdirSync(CONTENT)

@@ -144,31 +144,72 @@ case "${1:-}" in
     echo "Restarted."
     ;;
   web)
-    # HTTPS for Friday's public pages. Its own nginx site, so the server's other sites aren't touched.
+    # The website over HTTPS. Its own nginx site, so the server's other sites aren't touched. The page itself is static,
+    # copied in by scripts/deploy-website.sh; only Friday's own pages (Google's sign-in, the privacy policy) reach it.
+    # Don't add http2 to a listen line here: on this nginx it would switch every site on the socket.
     DOMAIN="${2:?Usage: sudo $0 web <domain>}"
     SITE="/etc/nginx/sites-available/$NAME"
+    ROOT="/var/www/$NAME"
+    PREVIOUS="$(mktemp)"
+    [ -f "$SITE" ] && cp "$SITE" "$PREVIOUS"
+    mkdir -p "$ROOT"
+    chown -R "${SUDO_USER:-root}:www-data" "$ROOT"
     cat > "$SITE" <<EOF
 server {
     listen 80;
     listen [::]:80;
-    server_name $DOMAIN;
-    location / {
+    server_name $DOMAIN www.$DOMAIN;
+    root $ROOT;
+    index index.html;
+    error_page 404 /404.html;
+
+    gzip_static on;
+    gzip_vary on;
+
+    # Repeated in each location that sets a header: nginx drops these as soon as a location has its own add_header.
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+
+    location = /privacy {
         limit_except GET { deny all; }
         proxy_pass http://127.0.0.1:3210;
         proxy_set_header Host \$host;
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
+    location ^~ /oauth/ {
+        limit_except GET { deny all; }
+        proxy_pass http://127.0.0.1:3210;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location ^~ /_astro/ {
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy strict-origin-when-cross-origin always;
+        try_files \$uri =404;
+    }
+
+    location / {
+        add_header Cache-Control "no-cache" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy strict-origin-when-cross-origin always;
+        try_files \$uri \$uri/ =404;
+    }
 }
 EOF
     ln -sf "$SITE" "/etc/nginx/sites-enabled/$NAME"
     if ! nginx -t; then
-      rm -f "$SITE" "/etc/nginx/sites-enabled/$NAME"
-      echo "nginx rejected the new site, so it was removed and nothing changed." >&2
+      if [ -s "$PREVIOUS" ]; then cp "$PREVIOUS" "$SITE"; else rm -f "$SITE" "/etc/nginx/sites-enabled/$NAME"; fi
+      rm -f "$PREVIOUS"
+      echo "nginx rejected the new site, so the old one is back and nothing changed." >&2
       exit 1
     fi
+    rm -f "$PREVIOUS"
     systemctl reload nginx
-    certbot --nginx -d "$DOMAIN" --non-interactive --redirect
-    echo "https://$DOMAIN now reaches Friday."
+    # --cert-name keeps the one certificate that covers both names, instead of Certbot making a second one for the domain.
+    certbot --nginx --cert-name "$DOMAIN" -d "$DOMAIN" -d "www.$DOMAIN" --non-interactive --redirect
+    echo "https://$DOMAIN is ready."
     ;;
   google)
     # Sets up Google sign-in. Reads the secret without showing it; the token key is made here and never printed.
