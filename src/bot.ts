@@ -6,7 +6,7 @@ import { respond } from "./agent.js";
 import { config } from "./config.js";
 import sharp from "sharp";
 import { syncCatalog } from "./catalog.js";
-import { addContact, allContacts, isAdmin, removeContact, takeDailyQuota } from "./contacts.js";
+import { addContact, allContacts, contactByNumber, isAdmin, removeContact, takeDailyQuota } from "./contacts.js";
 import { db } from "./db.js";
 import { imagesEnabled, saveImage } from "./images.js";
 import { currentModel, FAMILIES, isFamily, latestModel, setModel } from "./model.js";
@@ -20,6 +20,7 @@ import { MAX_VOICE_BYTES, transcribe, transcriptionEnabled } from "./transcribe.
 import { usageReport } from "./usage.js";
 import { formatDateTime, localDay, nowStamp } from "./time.js";
 import type { ChatContext, Outbox } from "./types.js";
+import { sendWelcome } from "./welcome.js";
 
 export type Media = {
   kind: "image" | "document" | "audio" | "video" | "sticker";
@@ -106,7 +107,7 @@ export const ADMIN_HELP = [
   `_Admin (balasan selalu ke chat pribadi ini; di grup awali dengan @${config.BOT_NAME}):_`,
   "/usage — biaya Claude per orang",
   "/contacts — siapa saja yang boleh memakai Friday",
-  "/add <nama> <nomor> — izinkan orang baru",
+  "/add <nama> <nomor> — izinkan orang baru (dia dapat pesan sambutan)",
   "/remove <nama> — cabut izinnya",
   "/katalog — perbarui katalog WhatsApp Business",
   "",
@@ -287,8 +288,10 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
         return true;
       }
       try {
+        // Renaming someone goes through /add too; only people new to Friday get the greeting.
+        const known = contactByNumber(number.replace(/\D/g, ""));
         const contact = addContact(name, number);
-        await toAdmin(`✅ ${contact.name} (+${contact.number}) can now chat with me.`);
+        await toAdmin(`✅ ${contact.name} (+${contact.number}) sudah bisa chat dengan saya.${known ? "" : `\n${await sendWelcome(contact, outbox)}`}`);
       } catch (err) {
         await toAdmin(err instanceof Error ? err.message : String(err));
       }

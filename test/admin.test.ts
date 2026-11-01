@@ -7,7 +7,10 @@ import { runTool, toolsFor } from "../src/tools.js";
 import { currentModel, newestOf } from "../src/model.js";
 import { parseDuration } from "../src/pause.js";
 import { duration } from "../src/status.js";
+import { findContact } from "../src/contacts.js";
+import { imagesEnabled } from "../src/images.js";
 import type { Outbox } from "../src/types.js";
+import { welcomeMessage } from "../src/welcome.js";
 
 type Sent = { chatId: string; text?: string; file?: string; data?: Buffer };
 let sent = [] as Sent[];
@@ -282,5 +285,61 @@ describe("secret admin commands", () => {
     assert.equal(parseDuration("lama"), undefined);
     assert.equal(duration(93_784_000), "1 hari 2 jam 3 menit");
     assert.equal(duration(1000), "kurang dari 1 menit");
+  });
+});
+
+describe("welcome message", () => {
+  it("greets someone new from /add, without Claude, and tells the admin", async () => {
+    const number = "6285100000001";
+    await handleIncoming(dm(ADMIN, `/add Tante Rina ${number}`), outbox);
+
+    const greeting = sent.find((m) => m.chatId === private_(number));
+    assert.match(greeting!.text!, /Halo Tante Rina/);
+    assert.ok(greeting!.text!.includes(`${ADMIN.name} baru saja memberi kamu akses`));
+    const note = sent.find((m) => m.chatId === private_(ADMIN.number));
+    assert.match(note!.text!, /Tante Rina.*\n.*sudah dikirim/);
+    assert.equal(claude.requests.length, 0);
+  });
+
+  it("lists only what any contact can use, and never promises privacy", () => {
+    const text = welcomeMessage("Budi");
+    assert.doesNotMatch(text, /onehub|errand|reservasi|booking/i);
+    assert.doesNotMatch(text, /hanya kamu|tidak ada yang bisa|rahasia|aman/i);
+    assert.match(text, /asisten AI/);
+    assert.match(text, /Batasnya 3 pesan per hari/);
+    assert.equal(text.includes("gambar"), imagesEnabled);
+  });
+
+  it("doesn't greet someone again when /add only renames them", async () => {
+    const number = "6285100000002";
+    await handleIncoming(dm(ADMIN, `/add Budi ${number}`), outbox);
+    sent = [] as Sent[];
+    await handleIncoming(dm(ADMIN, `/add Pak Budi ${number}`), outbox);
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].chatId, private_(ADMIN.number));
+    assert.equal(findContact(number)?.name, "Pak Budi");
+  });
+
+  it("keeps the contact and warns the admin when the number isn't on WhatsApp", async () => {
+    const number = "6285100000003";
+    await handleIncoming(dm(ADMIN, `/add Salah Nomor ${number}`), { ...outbox, isOnWhatsApp: async () => false });
+    assert.equal(sent.length, 1);
+    assert.match(sent[0].text!, /tidak terdaftar di WhatsApp/);
+    assert.equal(findContact(number)?.name, "Salah Nomor");
+  });
+
+  it("keeps the contact and warns the admin when the greeting fails", async () => {
+    const number = "6285100000004";
+    const flaky: Outbox = {
+      ...outbox,
+      async sendText(chatId, text) {
+        if (chatId === private_(number)) throw new Error("timed out");
+        sent.push({ chatId, text });
+      },
+    };
+    await handleIncoming(dm(ADMIN, `/add Gagal Kirim ${number}`), flaky);
+    assert.equal(sent.length, 1);
+    assert.match(sent[0].text!, /gagal dikirim: timed out/);
+    assert.equal(findContact(number)?.name, "Gagal Kirim");
   });
 });

@@ -111,7 +111,7 @@ Things to try:
 | `/id` | Show this chat's id and your number |
 | `/usage` | *(admin)* Claude usage per person, today and this month: estimated dollars (list prices) and tokens |
 | `/contacts` | *(admin)* Who can use Friday |
-| `/add <name> <number>` | *(admin)* Let someone use Friday, e.g. `/add Mom 6281234567890` |
+| `/add <name> <number>` | *(admin)* Let someone use Friday and send them a welcome message listing what it can do, e.g. `/add Mom 6281234567890` |
 | `/remove <name>` | *(admin)* Remove someone added with `/add` |
 | `/katalog` | *(admin)* Put the features in `catalog/items.json` into Friday's WhatsApp Business catalog (adds new items, updates changed ones; WhatsApp reviews each) |
 
@@ -161,7 +161,7 @@ only in their private chats (never in groups, where others read along).
 
 ## Sharing with family and friends
 
-Add people with `/add` (or in `ALLOWED_CONTACTS`). Only the admin sees who else uses Friday: admin commands always answer in the admin's
+Add people with `/add` (or in `ALLOWED_CONTACTS`). `/add` also greets them on WhatsApp, in Indonesian, with what they can use and an example of each. Only the admin sees who else uses Friday: admin commands always answer in the admin's
 private chat (even when sent in a group), and nobody else's conversations include the contact list. Each person gets their own private conversation, reminders and
 memories — others can't see them (though as the host, the data lives on your machine). To protect your bill, everyone
 except the admin is limited to `DAILY_MESSAGE_LIMIT` messages a day (50 by default). People who aren't contacts are
