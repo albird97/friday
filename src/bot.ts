@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { handleAccessRequest } from "./access.js";
 import { respond } from "./agent.js";
+import { announce, announcementNotes } from "./announce.js";
 import { config } from "./config.js";
 import sharp from "sharp";
 import { syncCatalog } from "./catalog.js";
@@ -104,7 +105,7 @@ async function processMessage(msg: Incoming, outbox: Outbox): Promise<void> {
 
   const content = await toContent(msg);
   if (!content) return;
-  for (const notes of [errandNotes(chat), actionNotes(chat), googleNotes(chat)]) if (notes) content.unshift({ type: "text", text: notes });
+  for (const notes of [errandNotes(chat), actionNotes(chat), googleNotes(chat), announcementNotes(chat)]) if (notes) content.unshift({ type: "text", text: notes });
   await respond(chat, content, outbox);
 }
 
@@ -115,6 +116,7 @@ export const ADMIN_HELP = [
   "/add <nama> <nomor> — izinkan orang baru (dia dapat pesan sambutan)",
   "/remove <nama> — cabut izinnya",
   "/katalog — perbarui katalog WhatsApp Business",
+  "/umumkan <teks> — kirim teks ini apa adanya ke semua kontak, tanpa nama pengirim (dari chat pribadi)",
   "",
   "_Rahasia (tidak terlihat orang lain):_",
   "/status — kesehatan, versi, biaya hari ini & bulan ini",
@@ -182,6 +184,18 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
       } catch (err) {
         await toAdmin(`⚠️ Katalog gagal diperbarui: ${err instanceof Error ? err.message : String(err)}\nPastikan nomor ini akun WhatsApp Business.`);
       }
+      return true;
+    }
+    case "/umumkan": {
+      if (!admin) return false;
+      // Cut from the raw text, not args: line breaks are part of the announcement.
+      const text = msg.text.trim().slice(command.length).trim();
+      if (chat.isGroup || !text || msg.media) {
+        await toAdmin("Kirim dari chat pribadi ini: /umumkan <teks>\nHanya teks, baris baru boleh. Gambar dan file tidak ikut terkirim.");
+        return true;
+      }
+      await toAdmin("📣 Mengirim pengumuman…");
+      await toAdmin(await announce(text, outbox));
       return true;
     }
     // Not listed in /help.

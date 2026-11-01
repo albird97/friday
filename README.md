@@ -117,6 +117,7 @@ Things to try:
 | `/add <name> <number>` | *(admin)* Let someone use Friday and send them a welcome message listing what it can do, e.g. `/add Mom 6281234567890` |
 | `/remove <name>` | *(admin)* Remove someone added with `/add` |
 | `/katalog` | *(admin)* Put the features in `catalog/items.json` into Friday's WhatsApp Business catalog (adds new items, updates changed ones; WhatsApp reviews each) |
+| `/umumkan <text>` | *(admin, private chat)* Send this text as is to every contact, with no sender label, one every few seconds, then report who got it. It goes out at once with no preview. Friday is told about it the next time each person writes, so it understands replies |
 
 Not listed in `/help` (admin only; answers always go to the admin's private chat, so nothing shows in a group):
 
