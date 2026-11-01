@@ -141,6 +141,11 @@ db.exec(`
     scopes        TEXT NOT NULL,
     connected_at  INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS google_youtube (
+    number        TEXT PRIMARY KEY,
+    refresh_token TEXT NOT NULL,
+    connected_at  INTEGER NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS google_links (
     state      TEXT PRIMARY KEY,
     number     TEXT NOT NULL,
@@ -170,6 +175,7 @@ db.exec(`
 for (const [table, column, type] of [
   ["token_usage", "cache_write_1h", "INTEGER NOT NULL DEFAULT 0"],
   ["token_usage", "web_searches", "INTEGER NOT NULL DEFAULT 0"],
+  ["google_links", "kind", "TEXT NOT NULL DEFAULT 'main'"],
 ] as const) {
   const columns = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
   if (!columns.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);

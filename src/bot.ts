@@ -11,7 +11,7 @@ import { db } from "./db.js";
 import { imagesEnabled, saveImage } from "./images.js";
 import { currentModel, FAMILIES, isFamily, latestModel, setModel } from "./model.js";
 import { confirmErrand, errandFor, errandIncoming, errandNotes } from "./errands.js";
-import { connectMessage, disconnect, googleAccount, googleAllowed, googleEnabled } from "./google.js";
+import { connectMessage, disconnect, googleAccount, googleAllowed, googleEnabled, youtubeMessage } from "./google.js";
 import { confirmGoogle, googleNotes } from "./googleapps.js";
 import { actionNotes, confirmAction } from "./onehub.js";
 import { EVERYWHERE, isPaused, parseDuration, pause, resume } from "./pause.js";
@@ -143,7 +143,7 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
           "",
           "/reset — start a fresh conversation (keeps memories and reminders)",
           "/id — show this chat's id and your number",
-          ...(googleEnabled ? ["/google — hubungkan akun Google milikmu (/google putus untuk memutus)"] : []),
+          ...(googleEnabled ? ["/google — hubungkan akun Google milikmu (/google youtube untuk YouTube, /google putus untuk memutus)"] : []),
           // The admin sees every command, the unlisted ones too, but only in their private chat.
           ...(admin && !chat.isGroup ? ["", ...ADMIN_HELP] : []),
         ].join("\n"),
@@ -193,8 +193,10 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
       if (args[0]?.toLowerCase() === "putus") {
         const gone = await disconnect(chat.sender.number, chat.chatId);
         await reply(gone ? "✅ Akses Google diputus, dan riwayat chat ini dihapus dari server." : "Belum ada akun Google yang terhubung.");
+      } else if (args[0]?.toLowerCase() === "youtube") {
+        await reply(account ? youtubeMessage(chat.sender.number) : "Hubungkan akun Google dulu dengan /google, lalu kirim /google youtube.");
       } else if (account) {
-        await reply(`Akun Google terhubung: ${account.email}\nKirim /google putus untuk memutusnya.`);
+        await reply(`Akun Google terhubung: ${account.email}\nKirim /google youtube untuk menambah YouTube, atau /google putus untuk memutus semuanya.`);
       } else {
         await reply(connectMessage(chat.sender.number, allContacts()[0]?.name ?? "admin"));
       }

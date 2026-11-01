@@ -14,7 +14,8 @@ type Sent = { chatId: string; text: string };
 type Call = { url: string; method: string; auth: string | null; body: string };
 let sent = [] as Sent[];
 let calls = [] as Call[];
-let tokenScopes = Object.values(SCOPES).join(" ");
+const MAIN_SCOPES = Object.values(SCOPES).filter((scope) => scope !== SCOPES.youtube).join(" ");
+let tokenScopes = MAIN_SCOPES;
 
 const outbox: Outbox = {
   async sendText(chatId, text) {
@@ -60,8 +61,8 @@ const groupOf = (who: { name: string; number: string }): ChatContext => ({ chatI
 const say = (chat: ChatContext, text: string): Promise<void> => handleIncoming({ chat, text, addressed: true } satisfies Incoming, outbox);
 
 /** Runs someone through /google and Google's consent screen, as `code` names their account. */
-async function connect(who: { name: string; number: string }, code: string) {
-  await say(chatOf(who), "/google");
+async function connect(who: { name: string; number: string }, code: string, command = "/google") {
+  await say(chatOf(who), command);
   const link = new URL(sent.at(-1)!.text.match(/https:\/\/accounts\.google\.com\S+/)![0]);
   await handleWeb("GET", `/oauth/google/callback?state=${link.searchParams.get("state")}&code=${code}`, outbox);
   return link;
@@ -72,10 +73,10 @@ const tool = (chat: ChatContext, name: string, input: unknown) => runTool(name, 
 const sentMail = () => calls.filter((c) => c.url.endsWith("/messages/send"));
 
 beforeEach(() => {
-  for (const table of ["google_accounts", "google_links", "google_pending"]) db.prepare(`DELETE FROM ${table}`).run();
+  for (const table of ["google_accounts", "google_youtube", "google_links", "google_pending"]) db.prepare(`DELETE FROM ${table}`).run();
   sent = [] as Sent[];
   calls = [] as Call[];
-  tokenScopes = Object.values(SCOPES).join(" ");
+  tokenScopes = MAIN_SCOPES;
 });
 
 describe("linking a Google account", () => {
@@ -131,6 +132,50 @@ describe("linking a Google account", () => {
     assert.equal(googleAccount(WIFE.number), undefined);
     assert.ok(calls.some((c) => c.url.endsWith("/revoke") && c.body.includes("refresh-sarah")));
     assert.equal(db.prepare("SELECT 1 FROM sessions WHERE chat_id = ?").get(chat.chatId), undefined);
+  });
+});
+
+describe("YouTube, a login of its own", () => {
+  it("never asks for YouTube together with drive.file, which Google refuses", async () => {
+    const main = await connect(WIFE, "sarah");
+    const scopes = main.searchParams.get("scope")!;
+    assert.ok(scopes.includes(SCOPES.driveFile));
+    assert.ok(!scopes.includes("youtube"));
+
+    await say(chatOf(WIFE), "/google youtube");
+    const link = new URL(sent.at(-1)!.text.match(/https:\/\/accounts\.google\.com\S+/)![0]);
+    assert.equal(link.searchParams.get("scope"), SCOPES.youtube);
+  });
+
+  it("needs the main account first, then adds only the YouTube tools with their own token", async () => {
+    await say(chatOf(WIFE), "/google youtube");
+    assert.match(sent.at(-1)!.text, /Hubungkan akun Google dulu/);
+
+    await connect(WIFE, "sarah");
+    const names = () => googleTools(chatOf(WIFE)).map((t) => (t as { name: string }).name);
+    assert.ok(!names().includes("google_youtube_search"));
+    assert.match((await tool(chatOf(WIFE), "google_youtube_search", { query: "oli" })).content, /\/google youtube/);
+
+    await connect(WIFE, "sarahtube", "/google youtube");
+    assert.match(sent.at(-1)!.text, /YouTube terhubung/);
+    assert.ok(names().includes("google_youtube_search"));
+    assert.equal(googleAccount(WIFE.number)?.email, "sarah@gmail.com");
+
+    calls = [] as Call[];
+    await tool(chatOf(WIFE), "google_youtube_search", { query: "oli" });
+    assert.equal(calls.at(-1)!.auth, "Bearer access-of-refresh-sarahtube");
+    await tool(chatOf(WIFE), "google_calendar_events", {});
+    assert.equal(calls.at(-1)!.auth, "Bearer access-of-refresh-sarah");
+  });
+
+  it("/google putus ends both logins", async () => {
+    await connect(WIFE, "sarah");
+    await connect(WIFE, "sarahtube", "/google youtube");
+    await say(chatOf(WIFE), "/google putus");
+    const revoked = calls.filter((c) => c.url.endsWith("/revoke")).map((c) => c.body);
+    assert.ok(revoked.some((b) => b.includes("refresh-sarahtube")));
+    assert.ok(revoked.some((b) => b.includes("refresh-sarah&") || b.endsWith("refresh-sarah")));
+    assert.equal(db.prepare("SELECT 1 FROM google_youtube").get(), undefined);
   });
 });
 

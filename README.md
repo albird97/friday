@@ -170,6 +170,7 @@ ignored in private chats; Friday logs their number so you can `/add` them.
 ## Google apps
 
 Each contact links their own Google account by sending `/google` in their private chat, and `/google putus` ends it.
+YouTube is a second step, `/google youtube`, because Google won't ask for it on the same screen as Drive files.
 Friday then works with that person's Calendar, Tasks, Gmail, Drive, Docs, Sheets, Slides, Forms, Contacts and YouTube,
 only in their private chat. The account is found from the sender's number, so nobody can reach someone else's. Reading
 runs straight away. Anything that changes something gets a preview and needs a `YA 1234` reply, checked by code rather

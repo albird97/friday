@@ -470,7 +470,7 @@ const YOUTUBE_TOOLS = [
     scope: SCOPES.youtube,
     schema: z.object({ query: z.string().min(1) }),
     async run({ query }, { number }) {
-      const { items = [] } = await google<{ items?: { id: { videoId: string }; snippet: { title: string; channelTitle: string; publishedAt: string } }[] }>(number, `${YOUTUBE}/search`, { query: { part: "snippet", type: "video", q: query, maxResults: 5 } });
+      const { items = [] } = await google<{ items?: { id: { videoId: string }; snippet: { title: string; channelTitle: string; publishedAt: string } }[] }>(number, `${YOUTUBE}/search`, { grant: "youtube", query: { part: "snippet", type: "video", q: query, maxResults: 5 } });
       return list(items.map((v) => `- ${v.snippet.title} | ${v.snippet.channelTitle} | ${v.snippet.publishedAt.slice(0, 10)} | https://youtu.be/${v.id.videoId}`), "No videos found.");
     },
   }),
@@ -480,7 +480,7 @@ const YOUTUBE_TOOLS = [
     scope: SCOPES.youtube,
     schema: z.object({}),
     async run(_i, { number }) {
-      const { items = [] } = await google<{ items?: { snippet: { title: string } }[] }>(number, `${YOUTUBE}/subscriptions`, { query: { part: "snippet", mine: true, maxResults: 50 } });
+      const { items = [] } = await google<{ items?: { snippet: { title: string } }[] }>(number, `${YOUTUBE}/subscriptions`, { grant: "youtube", query: { part: "snippet", mine: true, maxResults: 50 } });
       return list(items.map((c) => `- ${c.snippet.title}`), "No subscriptions.");
     },
   }),
@@ -508,7 +508,7 @@ export async function runGoogleTool(name: string, input: unknown, chat: ChatCont
   const tool = APPS.find((t) => t.name === name);
   if (!tool) throw new Error(`No Google tool called ${name}.`);
   const parsed = tool.schema.parse(input);
-  if (!googleAccount(chat.sender.number)?.scopes.includes(tool.scope)) throw new Error("This person didn't allow that Google app. They can send /google to connect again.");
+  if (!googleAccount(chat.sender.number)?.scopes.includes(tool.scope)) throw new Error(tool.scope === SCOPES.youtube ? "YouTube isn't connected. Ask them to send /google youtube." : "This person didn't allow that Google app. They can send /google to connect again.");
   if (tool.preview) return propose(tool, parsed, chat, outbox);
   return tool.run(parsed, { number: chat.sender.number, chatId: chat.chatId });
 }
