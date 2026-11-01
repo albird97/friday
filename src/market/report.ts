@@ -97,7 +97,7 @@ export function reportOf(a: Analysis): string {
     "",
     ...a.plans.flatMap((plan, i) => planLines(a, plan, i)),
     "",
-    `Last closed candles: ${s.candles.slice(-5).map((c) => `${stamp(c.time)} O ${c.open} H ${c.high} L ${c.low} C ${c.close}${hasVolume ? ` V ${compact(c.volume)}` : ""}`).join(" | ")}`,
+    `Last closed candles: ${s.candles.slice(-5).map((c) => `${stamp(c.time)} O ${roundPrice(c.open, series)} H ${roundPrice(c.high, series)} L ${roundPrice(c.low, series)} C ${roundPrice(c.close, series)}${hasVolume ? ` V ${compact(c.volume)}` : ""}`).join(" | ")}`,
     ...(a.warnings.length ? ["", `Warnings: ${a.warnings.join(" ")}`] : []),
     "",
     "How to answer: the chart is already in the chat, with these levels drawn on it, so don't describe the picture. In their language and WhatsApp style give the status and why, the trend and key levels, the range, then the plan: entry, stop, targets, and when it's cancelled. Per target show the chance it's reached and the chance of ending in profit with its range, the number of past cases and the average result, next to the random-entry figures. Never present the profit figure as the chance of reaching a target. Say plainly when there's no measured edge. Those chances are how often this setup paid in the past, not a forecast. Never invent a level or a chance, and never say a trade will win. End with one line: this isn't investment advice and you aren't a licensed adviser.",

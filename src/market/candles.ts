@@ -193,7 +193,7 @@ type YahooResult = {
   indicators?: { quote?: { open: (number | null)[]; high: (number | null)[]; low: (number | null)[]; close: (number | null)[]; volume?: (number | null)[] }[] };
 };
 
-/** Yahoo's rows without gaps, and without the last bar when it's still forming or is a stub stamped at the last trade. */
+/** Yahoo's rows without gaps, and without the last bar when it's still forming or is a stub left by the last trade. */
 export function yahooCandles(result: YahooResult, seconds: number, now: number): Candle[] {
   const quote = result.indicators?.quote?.[0];
   const rows: Candle[] = [];
@@ -216,6 +216,9 @@ export function yahooCandles(result: YahooResult, seconds: number, now: number):
     if ((last.time - previous.time) % seconds === 0 && last.time + seconds <= now) break;
     rows.pop();
   }
+  // Only one: a suspended stock is a whole run of these, and that has to stay visible.
+  const last = rows.at(-1);
+  if (rows.length > 1 && last && last.high === last.low && !last.volume) rows.pop();
   return rows;
 }
 
@@ -323,7 +326,7 @@ async function cryptoSeries(symbol: string, tf: Timeframe, now: number): Promise
 
 /** Yahoo has no spot gold. Binance's XAUUSDT follows it closely but is young, so long timeframes read COMEX futures. */
 async function goldSeries(tf: Timeframe, now: number): Promise<Series> {
-  const futures = () => yahooSeries("GC=F", tf, now).then((series) => ({ ...series, kind: "gold", name: "Gold (COMEX futures GC=F, a few dollars from spot XAUUSD)" }));
+  const futures = () => yahooSeries("GC=F", tf, now).then((series) => ({ ...series, kind: "gold", name: "Gold (COMEX futures GC=F, not spot XAUUSD)" }));
   if (tf.seconds >= DAY) return futures();
   const series = await binanceSeries("futures", "XAUUSDT", tf, now).catch(() => undefined);
   return series ? { ...series, kind: "gold", name: "Gold (XAU/USD, Binance XAUUSDT perpetual)" } : futures();

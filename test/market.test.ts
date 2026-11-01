@@ -203,9 +203,25 @@ describe("closed candles", () => {
   });
 
   it("drops an intraday candle still forming, and the stub Yahoo stamps at the last trade", () => {
-    const rows = (times: number[]) => ({ meta: { symbol: "X" }, timestamp: times, indicators: { quote: [{ open: times.map(() => 1), high: times.map(() => 1), low: times.map(() => 1), close: times.map(() => 1) }] } });
+    const rows = (times: number[]) => ({ meta: { symbol: "X" }, timestamp: times, indicators: { quote: [{ open: times.map(() => 1), high: times.map(() => 2), low: times.map(() => 0), close: times.map(() => 1) }] } });
     assert.equal(yahooCandles(rows([0, HOUR, 2 * HOUR]), HOUR, 2 * HOUR + 60).length, 2);
     assert.equal(yahooCandles(rows([0, HOUR, 2 * HOUR, 2 * HOUR + 1740]), HOUR, 100 * HOUR).length, 3);
+  });
+
+  it("drops the one-tick row Yahoo leaves at the close, on the grid and with no volume", () => {
+    const rows = (close: number[], volume: number[]) => ({
+      meta: { symbol: "X" },
+      timestamp: close.map((_, i) => i * HOUR),
+      indicators: { quote: [{ open: [1, 2, 3], high: [1.5, 2.5, 3], low: [0.5, 1.5, 3], close, volume }] },
+    });
+    assert.equal(yahooCandles(rows([1, 2, 3], [5, 5, 0]), HOUR, 100 * HOUR).length, 2);
+    assert.equal(yahooCandles(rows([1, 2, 3], [5, 5, 9]), HOUR, 100 * HOUR).length, 3, "a closing auction has real volume");
+  });
+
+  it("drops only one flat row, so a suspended stock still looks suspended", () => {
+    const flat = [1, 1, 1, 1];
+    const rows = { meta: { symbol: "X" }, timestamp: [0, HOUR, 2 * HOUR, 3 * HOUR], indicators: { quote: [{ open: flat, high: flat, low: flat, close: flat, volume: [0, 0, 0, 0] }] } };
+    assert.equal(yahooCandles(rows, HOUR, 100 * HOUR).length, 3);
   });
 
   it("keeps today's daily candle only once the session has ended", () => {
