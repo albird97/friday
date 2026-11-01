@@ -23,17 +23,20 @@ export function dayStory(root: HTMLElement): () => void {
   gsap.set(chats.slice(1), { autoAlpha: 0 });
   gsap.set(sun, { x: "64vw", y: "42vh" });
 
+  // Where each scene starts, as a share of the timeline. The clock follows the timeline, not the scrollbar, because
+  // scrub makes the timeline trail slightly behind it.
+  let starts: number[] = [];
   const master = gsap.timeline({
     defaults: { ease: "none" },
+    onUpdate: () => {
+      const scene = starts.filter((start) => start <= master.progress()).length - 1;
+      clock.textContent = scenes[Math.max(0, scene)].dataset.time ?? "";
+    },
     scrollTrigger: {
       trigger: root.querySelector(".story__track"),
       start: "top top",
       end: "bottom bottom",
       scrub: 0.5,
-      onUpdate: ({ progress }) => {
-        const scene = Math.min(scenes.length - 1, Math.floor(progress * scenes.length));
-        clock.textContent = scenes[scene].dataset.time ?? "";
-      },
     },
   });
 
@@ -43,8 +46,8 @@ export function dayStory(root: HTMLElement): () => void {
     master.addLabel(label);
     if (i > 0) {
       master
-        .to(scenes[i - 1], { autoAlpha: 0, y: -28, duration: SWAP_SECONDS, ease: "power2.in" }, label)
-        .fromTo(scene, { autoAlpha: 0, y: 36 }, { autoAlpha: 1, y: 0, duration: SWAP_SECONDS, ease: "power2.out" }, `${label}+=0.2`)
+        .to(scenes[i - 1], { autoAlpha: 0, y: -28, duration: SWAP_SECONDS * 0.55, ease: "power2.in" }, label)
+        .fromTo(scene, { autoAlpha: 0, y: 36 }, { autoAlpha: 1, y: 0, duration: SWAP_SECONDS * 0.8, ease: "power2.out" }, `${label}+=${SWAP_SECONDS * 0.5}`)
         .to(chats![i - 1], { autoAlpha: 0, xPercent: -10, duration: SWAP_SECONDS }, label)
         .fromTo(chats![i], { autoAlpha: 0, xPercent: 12 }, { autoAlpha: 1, xPercent: 0, duration: SWAP_SECONDS, ease: "power2.out" }, label);
       if (sky) master.to(sky, { opacity: 1, duration: SWAP_SECONDS * 1.5 }, label);
@@ -54,6 +57,7 @@ export function dayStory(root: HTMLElement): () => void {
   master.to({}, { duration: LAST_HOLD_SECONDS });
 
   const day = master.duration();
+  starts = scenes.map((_, i) => master.labels[`scene-${i}`] / day);
   master
     .to(sun, { x: "44vw", y: "6vh", duration: day * 0.42, ease: "sine.out" }, 0)
     .to(sun, { x: "86vw", y: "98vh", duration: day * 0.44, ease: "sine.in" }, day * 0.42)
