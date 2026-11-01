@@ -1,0 +1,51 @@
+:root {
+  color-scheme: light;
+
+  /* Indigo and teal come from the art in catalog/, so the site and the WhatsApp catalog look related. */
+  --ink: oklch(0.24 0.07 280);
+  --ink-soft: oklch(0.24 0.07 280 / 0.78);
+  --snow: oklch(0.97 0.01 200);
+  --snow-soft: oklch(0.97 0.01 200 / 0.74);
+  --glow: oklch(0.78 0.11 195);
+
+  --sky-pagi: oklch(0.86 0.12 80);
+  --sky-siang: oklch(0.82 0.1 205);
+  --sky-sore: oklch(0.72 0.17 45);
+  --sky-senja: oklch(0.45 0.14 330);
+  --sky-malam: oklch(0.22 0.07 280);
+
+  --wash-pagi: linear-gradient(180deg, oklch(0.9 0.09 92), var(--sky-pagi) 58%, oklch(0.83 0.13 62));
+  --wash-siang: linear-gradient(180deg, oklch(0.8 0.11 225), var(--sky-siang) 62%, oklch(0.88 0.08 170));
+  --wash-sore: linear-gradient(180deg, oklch(0.78 0.14 70), var(--sky-sore) 62%, oklch(0.68 0.18 30));
+  --wash-senja: linear-gradient(180deg, oklch(0.32 0.1 300), var(--sky-senja) 62%, oklch(0.52 0.17 15));
+  --wash-malam: linear-gradient(180deg, oklch(0.16 0.05 280), var(--sky-malam) 62%, oklch(0.27 0.08 285));
+  --wash-fajar: linear-gradient(180deg, oklch(0.84 0.09 250), oklch(0.86 0.1 20) 55%, var(--sky-pagi));
+
+  --phone-body: oklch(0.2 0.02 280);
+  --phone-surface: oklch(0.97 0.008 200);
+  --phone-bar: oklch(0.995 0.002 200);
+  --phone-line: oklch(0.9 0.012 220);
+  --phone-muted: oklch(0.47 0.03 270);
+  --bubble-me: oklch(0.9 0.06 195);
+  --bubble-friday: oklch(1 0 0);
+
+  --font-display: "Bricolage Grotesque Variable", system-ui, sans-serif;
+  --font-text: "Plus Jakarta Sans Variable", system-ui, sans-serif;
+  --font-chat: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --step-h1: clamp(2.5rem, 7vw, 5.5rem);
+  --step-h2: clamp(2.25rem, 5.4vw, 4.25rem);
+  --step-clock: clamp(4.5rem, 15vw, 11rem);
+  --step-caption: clamp(1.5rem, 3vw, 2.5rem);
+  --step-feature: clamp(1.375rem, 2.6vw, 2.25rem);
+
+  --gutter: clamp(16px, 5vw, 72px);
+  --section-gap: clamp(88px, 13vw, 180px);
+
+  --z-sky: 0;
+  --z-content: 1;
+  --z-nav: 10;
+  --z-sticky: 20;
+}
