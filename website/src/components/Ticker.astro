@@ -1,0 +1,15 @@
+---
+import { prompts } from "../lib/content";
+
+const half = Math.ceil(prompts.length / 2);
+// Each list repeats its prompts so one copy is always wider than the screen, which keeps the loop seamless.
+const rows = [prompts.slice(0, half), prompts.slice(half)].map((row) => [...row, ...row]);
+---
+<section class="ticker" aria-label="Contoh perintah">
+  {rows.map((row, i) => (
+    <div class={`ticker__row ticker__row--${i}`}>
+      <ul>{row.map((prompt) => <li>{prompt}</li>)}</ul>
+      <ul aria-hidden="true">{row.map((prompt) => <li>{prompt}</li>)}</ul>
+    </div>
+  ))}
+</section>

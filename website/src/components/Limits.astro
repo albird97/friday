@@ -1,0 +1,9 @@
+---
+import { site } from "../lib/content";
+---
+<section class="limits">
+  <h2>Yang perlu kamu tahu</h2>
+  <ul class="limits__list">
+    {site.limits.map((limit) => <li><h3>{limit.title}</h3><p>{limit.text}</p></li>)}
+  </ul>
+</section>

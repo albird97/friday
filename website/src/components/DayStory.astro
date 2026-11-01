@@ -1,0 +1,32 @@
+---
+import { site, storyScenes } from "../lib/content";
+import Chat from "./Chat.astro";
+import Phone from "./Phone.astro";
+
+const first = storyScenes[0].demo.story!;
+---
+<section class="story" id="sehari">
+  <div class="story__intro">
+    <h2>{site.story.title}</h2>
+    <p>{site.story.text}</p>
+  </div>
+  <div class="story__track" style={`--scenes:${storyScenes.length}`}>
+    <div class="story__stage">
+      <ol class="story__scenes">
+        {storyScenes.map((feature) => {
+          const story = feature.demo.story!;
+          return (
+            <li class="scene" data-sky={story.sky} data-time={story.time}>
+              <div class="scene__copy">
+                <time class="scene__time">{story.time}</time>
+                <p class="scene__caption">{story.caption}</p>
+              </div>
+              <Phone class="scene__phone" time={story.time}><Chat demo={feature.demo} /></Phone>
+            </li>
+          );
+        })}
+      </ol>
+      <Phone class="story__phone" time={first.time} />
+    </div>
+  </div>
+</section>

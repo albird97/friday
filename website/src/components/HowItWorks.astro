@@ -1,0 +1,18 @@
+---
+import { site } from "../lib/content";
+---
+<section class="steps">
+  <h2>Mulai dalam tiga langkah</h2>
+  <div class="steps__rail">
+    <span class="steps__line" aria-hidden="true"></span>
+    <ol class="steps__list">
+      {site.steps.map((step, i) => (
+        <li class="step">
+          <span class="step__number" aria-hidden="true">{i + 1}</span>
+          <h3>{step.title}</h3>
+          <p>{step.text}</p>
+        </li>
+      ))}
+    </ol>
+  </div>
+</section>

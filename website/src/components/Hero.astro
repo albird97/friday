@@ -1,0 +1,27 @@
+---
+import { ctaUrl, features, site } from "../lib/content";
+import Chat from "./Chat.astro";
+import Phone from "./Phone.astro";
+
+const scenarios = ["friday-01", "friday-02", "friday-03"].map((id) => features.find((feature) => feature.id === id)!);
+---
+<section class="hero">
+  <div class="hero__copy">
+    <h1>{site.hero.lines.map((line) => <span class="line"><span>{line}</span></span>)}</h1>
+    <p class="hero__sub">{site.hero.sub}</p>
+    <div class="hero__actions">
+      <a class="button" href={ctaUrl} rel="noopener">Minta akses</a>
+      <a class="button button--quiet" href="#sehari">Lihat contohnya</a>
+    </div>
+    <p class="hero__note">{site.hero.note}</p>
+  </div>
+  <div class="hero__stage">
+    <Phone class="hero__phone" time="07.30">
+      <div class="hero__chats">
+        {scenarios.map((feature, i) => (
+          <div class="hero__chat" hidden={i > 0}><Chat demo={feature.demo} time="07.30" /></div>
+        ))}
+      </div>
+    </Phone>
+  </div>
+</section>

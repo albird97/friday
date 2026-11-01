@@ -1,0 +1,17 @@
+---
+// Stars sit at fixed positions so every build draws the same night. The golden-ratio steps spread them evenly.
+const star = (i: number) => `${((i * 61.8) % 100).toFixed(1)}vw ${((i * 37.3) % 72).toFixed(1)}vh 0 ${i % 3 === 0 ? 1 : 0}px oklch(0.97 0.01 200)`;
+const shadows = (from: number, to: number) => Array.from({ length: to - from }, (_, i) => star(from + i)).join(",");
+---
+<div class="sky" aria-hidden="true">
+  <div class="sky__layer" data-sky="pagi"></div>
+  <div class="sky__layer" data-sky="siang"></div>
+  <div class="sky__layer" data-sky="sore"></div>
+  <div class="sky__layer" data-sky="senja"></div>
+  <div class="sky__layer" data-sky="malam">
+    <span class="stars" style={`box-shadow:${shadows(1, 36)}`}></span>
+    <span class="stars stars--late" style={`box-shadow:${shadows(36, 70)}`}></span>
+  </div>
+  <div class="sky__layer" data-sky="fajar"><span class="sun sun--dawn"></span></div>
+  <span class="sun sun--day"></span>
+</div>

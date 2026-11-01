@@ -1,0 +1,73 @@
+---
+import { getImage, Image } from "astro:assets";
+import type { ImageMetadata } from "astro";
+import type { Bubble } from "../lib/content";
+
+interface Props {
+  bubble: Bubble;
+  time: string;
+}
+const { bubble, time } = Astro.props;
+const images = import.meta.glob<{ default: ImageMetadata }>("../assets/demo/*", { eager: true });
+const picture = bubble.kind === "image" ? images[`../assets/demo/${bubble.src}`].default : undefined;
+// A tiny copy, not the original, so the blur doesn't download the full picture again.
+const blur = picture && (await getImage({ src: picture, width: 32, format: "webp", quality: 40 }));
+const most = bubble.kind === "poll" ? Math.max(...bubble.options.map((option) => option.votes)) : 1;
+// A fixed waveform, so every build draws the same voice note.
+const bars = Array.from({ length: 28 }, (_, i) => 26 + ((i * 47 + 13) % 74));
+---
+<li class={`bubble bubble--${bubble.from}`} data-from={bubble.from} data-kind={bubble.kind}>
+  {bubble.kind === "text" && <p class="bubble__text">{bubble.text}</p>}
+  {bubble.kind === "voice" && (
+    <div class="voice" role="img" aria-label={`Voice note ${bubble.seconds} detik`}>
+      <span class="voice__play" aria-hidden="true"></span>
+      <span class="voice__wave" aria-hidden="true">
+        {bars.map((height) => <span class="voice__bar" style={`--h:${height}%`}></span>)}
+      </span>
+      <span class="voice__time">0:0{bubble.seconds}</span>
+    </div>
+  )}
+  {bubble.kind === "file" && (
+    <div class="file">
+      <div class="file__head">
+        <span class="file__badge" aria-hidden="true">{bubble.ext.toUpperCase()}</span>
+        <span class="file__info"><strong>{bubble.fileName}</strong><small>{bubble.meta}</small></span>
+      </div>
+      {bubble.preview && (
+        <table class="file__sheet">
+          <tbody>
+            {bubble.preview.map((row) => <tr class="file__row">{row.map((cell) => <td>{cell}</td>)}</tr>)}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )}
+  {bubble.kind === "image" && picture && blur && (
+    <figure class="image">
+      <div class="image__frame">
+        <Image src={picture} alt={bubble.alt} width={480} format="webp" quality={70} loading="lazy" />
+        <span class="image__blur" style={`background-image:url(${blur.src})`} aria-hidden="true"></span>
+      </div>
+      {bubble.caption && <figcaption class="bubble__text">{bubble.caption}</figcaption>}
+    </figure>
+  )}
+  {bubble.kind === "poll" && (
+    <div class="poll">
+      <p class="poll__question">{bubble.question}</p>
+      {bubble.options.map((option) => (
+        <div class="poll__option">
+          <span class="poll__label"><span>{option.label}</span><span class="poll__votes">{option.votes}</span></span>
+          <span class="poll__track" aria-hidden="true"><span class="poll__bar" style={`--w:${(option.votes / most) * 100}%`}></span></span>
+        </div>
+      ))}
+    </div>
+  )}
+  <span class="bubble__meta">
+    {bubble.time ?? time}
+    {bubble.from === "me" && (
+      <svg class="bubble__ticks" viewBox="0 0 18 11" width="16" height="10" aria-hidden="true">
+        <path d="M1 6l3.5 3.5L10 3M7.5 8l1.5 1.5L16.5 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    )}
+  </span>
+</li>

@@ -1,0 +1,31 @@
+---
+import { features } from "../lib/content";
+import Chat from "./Chat.astro";
+import Phone from "./Phone.astro";
+---
+<section class="picker" id="fitur">
+  <div class="picker__intro">
+    <h2>Semua yang bisa Friday lakukan</h2>
+    <p class="picker__hint">Pilih satu untuk melihat contohnya.</p>
+  </div>
+  <div class="picker__body">
+    <div class="picker__tabs">
+      {features.map((feature, i) => (
+        <button class="picker__tab" type="button" id={`tab-${feature.id}`} aria-selected={i === 0 ? "true" : "false"}>
+          <span class="picker__name">{feature.name}</span>
+          <span class="picker__summary"><span>{feature.summary}</span></span>
+        </button>
+      ))}
+    </div>
+    <p class="picker__lead">{features[0].summary}</p>
+    <Phone class="picker__phone" time="20.45">
+      {features.map((feature, i) => (
+        <article class="panel" id={`panel-${feature.id}`} data-active={i === 0 ? "true" : "false"}>
+          <h3 class="panel__title">{feature.name}</h3>
+          <p class="panel__summary">{feature.summary}</p>
+          <Chat demo={feature.demo} time={feature.demo.story?.time ?? "20.45"} />
+        </article>
+      ))}
+    </Phone>
+  </div>
+</section>

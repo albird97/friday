@@ -1,0 +1,14 @@
+---
+import { faq } from "../lib/content";
+---
+<section class="faq">
+  <h2>Pertanyaan umum</h2>
+  <div class="faq__list">
+    {faq.map((item) => (
+      <details name="faq">
+        <summary>{item.q}</summary>
+        <p>{item.a} {item.link && <a href={item.link}>{item.linkText}</a>}</p>
+      </details>
+    ))}
+  </div>
+</section>
