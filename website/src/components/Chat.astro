@@ -5,8 +5,10 @@ import BubbleItem from "./Bubble.astro";
 interface Props {
   demo: Demo;
   time?: string;
+  /** How many bubbles show before any script runs. The rest wait for the animation. */
+  shown?: number;
 }
-const { demo, time = demo.story?.time ?? "20.45" } = Astro.props;
+const { demo, time = demo.story?.time ?? "20.45", shown = demo.thread.length } = Astro.props;
 ---
 <div class="chat" role="group" aria-label={`Contoh chat di ${demo.chat}`}>
   <div class="chat__header">
@@ -15,7 +17,7 @@ const { demo, time = demo.story?.time ?? "20.45" } = Astro.props;
   </div>
   <div class="chat__viewport">
     <ol class="chat__list">
-      {demo.thread.map((bubble) => <BubbleItem bubble={bubble} time={time} />)}
+      {demo.thread.map((bubble, i) => <BubbleItem bubble={bubble} time={time} later={i >= shown} />)}
     </ol>
     <div class="chat__typing" aria-hidden="true"><span></span><span></span><span></span></div>
   </div>

@@ -6,8 +6,9 @@ import type { Bubble } from "../lib/content";
 interface Props {
   bubble: Bubble;
   time: string;
+  later?: boolean;
 }
-const { bubble, time } = Astro.props;
+const { bubble, time, later = false } = Astro.props;
 const images = import.meta.glob<{ default: ImageMetadata }>("../assets/demo/*", { eager: true });
 const picture = bubble.kind === "image" ? images[`../assets/demo/${bubble.src}`].default : undefined;
 // A tiny copy, not the original, so the blur doesn't download the full picture again.
@@ -16,7 +17,7 @@ const most = bubble.kind === "poll" ? Math.max(...bubble.options.map((option) =>
 // A fixed waveform, so every build draws the same voice note.
 const bars = Array.from({ length: 28 }, (_, i) => 26 + ((i * 47 + 13) % 74));
 ---
-<li class={`bubble bubble--${bubble.from}`} data-from={bubble.from} data-kind={bubble.kind}>
+<li class={`bubble bubble--${bubble.from}`} data-from={bubble.from} data-kind={bubble.kind} data-later={later ? "true" : undefined}>
   {bubble.kind === "text" && <p class="bubble__text">{bubble.text}</p>}
   {bubble.kind === "voice" && (
     <div class="voice" role="img" aria-label={`Voice note ${bubble.seconds} detik`}>

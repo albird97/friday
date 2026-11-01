@@ -1,40 +1,40 @@
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import { chatTimeline, replay } from "./chat";
+import { chatTimeline } from "./chat";
 
-const FIRST_HOLD_SECONDS = 2.2;
-const BETWEEN_SECONDS = 2.6;
+const FIRST_EXCHANGE = "bubble-2";
+const HOLD_SECONDS = 2.2;
+const END_SECONDS = 3.4;
 const TILT_DEGREES = 7;
 
-/** The first conversation is already on the page; this only moves on to the next ones, then repeats. */
+/** The first exchange is already on the page; this carries the conversation on from there, then starts it over. */
 export function heroChat(root: HTMLElement): void {
-  const scenarios = gsap.utils.toArray<HTMLElement>(".hero__chat", root);
   const phone = root.querySelector<HTMLElement>(".hero__phone")!;
-  const timelines = new Map<number, gsap.core.Timeline>();
-  let index = 0;
-  let waiting = gsap.delayedCall(FIRST_HOLD_SECONDS, next);
-  let playing: gsap.core.Timeline | undefined;
+  const chat = root.querySelector<HTMLElement>(".chat")!;
+  const viewport = chat.querySelector(".chat__viewport");
+  const timeline = chatTimeline(chat).seek(FIRST_EXCHANGE);
+  let waiting = gsap.delayedCall(HOLD_SECONDS, play);
+  let playing = false;
 
-  for (const scenario of scenarios.slice(1)) {
-    scenario.hidden = false;
-    gsap.set(scenario, { autoAlpha: 0 });
+  function play() {
+    playing = true;
+    timeline.play();
   }
 
-  function next() {
-    const from = scenarios[index];
-    index = (index + 1) % scenarios.length;
-    const to = scenarios[index];
-    const chat = to.querySelector<HTMLElement>(".chat")!;
-    const timeline = timelines.get(index) ?? chatTimeline(chat);
-    timelines.set(index, timeline);
-    gsap.to(from, { autoAlpha: 0, duration: 0.35, ease: "power2.out" });
-    gsap.set(to, { autoAlpha: 1 });
-    playing = timeline;
-    timeline.eventCallback("onComplete", () => {
-      waiting = gsap.delayedCall(BETWEEN_SECONDS, next);
-    });
-    replay(timeline, chat);
+  function rewind() {
+    gsap
+      .timeline({ onComplete: () => (waiting = gsap.delayedCall(HOLD_SECONDS, play)) })
+      .to(viewport, { autoAlpha: 0, duration: 0.35, ease: "power2.in" })
+      .call(() => {
+        timeline.pause().seek(FIRST_EXCHANGE);
+      })
+      .to(viewport, { autoAlpha: 1, duration: 0.45, ease: "power2.out" });
   }
+
+  timeline.eventCallback("onComplete", () => {
+    playing = false;
+    waiting = gsap.delayedCall(END_SECONDS, rewind);
+  });
 
   ScrollTrigger.create({
     trigger: root,
@@ -42,7 +42,7 @@ export function heroChat(root: HTMLElement): void {
     end: "bottom top",
     onToggle: ({ isActive }) => {
       waiting.paused(!isActive);
-      playing?.paused(!isActive);
+      if (playing) timeline.paused(!isActive);
     },
   });
 

@@ -43,7 +43,7 @@ export function chatTimeline(chat: HTMLElement): gsap.core.Timeline {
   gsap.set(list, { y: 0 });
   let shift = 0;
 
-  for (const bubble of bubbles) {
+  bubbles.forEach((bubble, index) => {
     const mine = bubble.dataset.from === "me";
     gsap.set(bubble, { transformOrigin: mine ? "100% 100%" : "0% 100%" });
     const text = bubble.querySelector(".bubble__text")?.textContent ?? "";
@@ -61,9 +61,10 @@ export function chatTimeline(chat: HTMLElement): gsap.core.Timeline {
       .to(list, { y, duration: 0.45 })
       .to(bubble, { autoAlpha: 1, y: 0, scale: 1, duration: 0.5 }, "<")
       .add(richReveal(bubble), "-=0.3")
-      .to({}, { duration: HOLD_SECONDS });
+      .to({}, { duration: HOLD_SECONDS })
+      .addLabel(`bubble-${index + 1}`);
     shift = y;
-  }
+  });
   return timeline;
 }
 

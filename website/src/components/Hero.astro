@@ -3,7 +3,10 @@ import { ctaUrl, features, site } from "../lib/content";
 import Chat from "./Chat.astro";
 import Phone from "./Phone.astro";
 
-const scenarios = ["friday-01", "friday-02", "friday-03"].map((id) => features.find((feature) => feature.id === id)!);
+// One conversation that keeps going, so the phone is never empty. Bubbles with their own time happen later in the day.
+const thread = ["friday-01", "friday-02", "friday-03"]
+  .flatMap((id) => features.find((feature) => feature.id === id)!.demo.thread)
+  .filter((bubble) => !bubble.time);
 ---
 <section class="hero">
   <div class="hero__copy">
@@ -17,11 +20,7 @@ const scenarios = ["friday-01", "friday-02", "friday-03"].map((id) => features.f
   </div>
   <div class="hero__stage">
     <Phone class="hero__phone" time="07.30">
-      <div class="hero__chats">
-        {scenarios.map((feature, i) => (
-          <div class="hero__chat" hidden={i > 0}><Chat demo={feature.demo} time="07.30" /></div>
-        ))}
-      </div>
+      <Chat demo={{ chat: "Friday", thread }} time="07.30" shown={2} />
     </Phone>
   </div>
 </section>
