@@ -277,7 +277,7 @@ html.intro .hero__phone {
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     column-gap: 5vw;
-    min-height: 100svh;
+    min-height: calc(100 * var(--svh));
     padding-top: 96px;
     padding-bottom: 48px;
   }
@@ -417,7 +417,7 @@ html.intro .hero__phone {
 }
 
 .story.is-live .story__track {
-  height: calc(var(--scenes) * 120svh);
+  height: calc(var(--scenes) * calc(120 * var(--svh)));
 }
 
 .story.is-live .story__stage {
@@ -427,14 +427,14 @@ html.intro .hero__phone {
   grid-template-rows: auto minmax(0, 1fr);
   justify-items: center;
   gap: 12px;
-  height: 100svh;
+  height: calc(100 * var(--svh));
   padding: 72px var(--edge) 16px;
 }
 
 .story.is-live .story__scenes {
   position: relative;
   width: 100%;
-  height: clamp(132px, 25svh, 208px);
+  height: clamp(132px, calc(25 * var(--svh)), 208px);
 }
 
 .story.is-live .scene {
@@ -446,12 +446,12 @@ html.intro .hero__phone {
 }
 
 .story.is-live .scene__time {
-  font-size: clamp(3.25rem, 10.5svh, 5rem);
+  font-size: clamp(3.25rem, calc(10.5 * var(--svh)), 5rem);
 }
 
 .story.is-live .scene__caption {
   margin-top: 6px;
-  font-size: clamp(1.5rem, 3.2svh, 1.75rem);
+  font-size: clamp(1.5rem, calc(3.2 * var(--svh)), 1.75rem);
 }
 
 .story.is-live .scene__phone {
@@ -499,7 +499,7 @@ html.intro .hero__phone {
 
   .story.is-live .story__phone {
     width: 312px;
-    height: min(640px, calc(100svh - 108px));
+    height: min(640px, calc(calc(100 * var(--svh)) - 108px));
   }
 }
 
@@ -894,7 +894,7 @@ html:not(.js) .panel .chat {
   display: grid;
   justify-items: center;
   gap: 28px;
-  padding: clamp(180px, 42svh, 420px) var(--edge) clamp(88px, 13vw, 150px);
+  padding: clamp(180px, calc(42 * var(--svh)), 420px) var(--edge) clamp(88px, 13vw, 150px);
   background: var(--wash-fajar);
   text-align: center;
 }
@@ -950,7 +950,7 @@ html.motion .footer {
   display: grid;
   place-content: center;
   gap: 24px;
-  min-height: 100svh;
+  min-height: calc(100 * var(--svh));
   padding: 24px var(--edge);
   text-align: center;
 }

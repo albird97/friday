@@ -2,7 +2,7 @@
   position: relative;
   flex: none;
   width: min(312px, 84vw);
-  height: min(620px, 78svh);
+  height: min(620px, calc(78 * var(--svh)));
   padding: 9px;
   border-radius: 44px;
   background: var(--phone-body);

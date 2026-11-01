@@ -50,4 +50,41 @@
   --z-content: 1;
   --z-nav: 10;
   --z-sticky: 20;
+
+  --svh: 1vh;
+}
+
+/* Links open inside WhatsApp, and some older phones never update that browser. */
+@supports (height: 1svh) {
+  :root {
+    --svh: 1svh;
+  }
+}
+
+@supports not (color: oklch(0 0 0)) {
+  :root {
+    --ink: #1a1a3f;
+    --ink-soft: #1a1a3f;
+    --snow: #eef7f8;
+    --snow-soft: #eef7f8;
+    --glow: #4fcdcd;
+    --sky-pagi: #fac871;
+    --sky-siang: #6cd7e3;
+    --sky-sore: #f97c3d;
+    --sky-senja: #7e3179;
+    --sky-malam: #15153a;
+    --wash-pagi: #fac871;
+    --wash-siang: #6cd7e3;
+    --wash-sore: #f97c3d;
+    --wash-senja: #7e3179;
+    --wash-malam: #15153a;
+    --wash-fajar: #fac871;
+    --phone-body: #14151f;
+    --phone-surface: #eff7f7;
+    --phone-bar: #fcfefe;
+    --phone-line: #d6e0e3;
+    --phone-muted: #545a6c;
+    --bubble-me: #b0ebea;
+    --bubble-friday: #fff;
+  }
 }
