@@ -100,6 +100,7 @@ Things to try:
 - "Remember that Sarah is allergic to peanuts"
 - "Tell Sarah I'll be home at 8"
 - *(in a group)* "@Friday see who can come to dinner on Saturday at 7" — sends a poll; later "@Friday who's coming?"
+- *(admin only)* "Post in the Kongkow group: we meet at 7" — Friday posts it as itself
 
 ### Commands
 

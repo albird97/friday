@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { beforeEach, describe, it } from "node:test";
 import { handleIncoming, type Incoming } from "../src/bot.js";
+import { runTool, toolsFor } from "../src/tools.js";
 import { currentModel, newestOf } from "../src/model.js";
 import { parseDuration } from "../src/pause.js";
 import { duration } from "../src/status.js";
@@ -217,6 +218,45 @@ describe("secret admin commands", () => {
     assert.equal(newestOf("opus", [...ids, "claude-opus-6"]), "claude-opus-6");
     assert.equal(newestOf("haiku", ids), "claude-haiku-4-5-20251001");
     assert.equal(newestOf("sonnet", ["claude-opus-5"]), undefined);
+  });
+
+  it("lets the admin post in a group, found by name, and nobody else", async () => {
+    const withGroups: Outbox = {
+      ...outbox,
+      groups: async () => [
+        { id: GROUP, name: "Kongkow" },
+        { id: "2@g.us", name: "Keluarga Besar" },
+        { id: "3@g.us", name: "Keluarga Inti" },
+      ],
+    };
+    const post = (from: { name: string; number: string }, group: string, text = "Halo semua") =>
+      runTool("send_group_message", { group, text }, { chat: dm(from, "").chat, outbox: withGroups });
+
+    assert.match((await post(ADMIN, "keluarga inti")).content, /Posted in Keluarga Inti/);
+    assert.deepEqual(sent, [{ chatId: "3@g.us", text: "Halo semua" }]);
+    assert.match((await post(ADMIN, "kong")).content, /Posted in Kongkow/);
+    assert.equal(sent.at(-1)!.chatId, GROUP);
+
+    sent = [] as Sent[];
+    const ambiguous = await post(ADMIN, "keluarga");
+    assert.ok(ambiguous.isError);
+    assert.match(ambiguous.content, /Keluarga Besar, Keluarga Inti/);
+    const unknown = await post(ADMIN, "kantor");
+    assert.ok(unknown.isError);
+    assert.match(unknown.content, /My groups: Kongkow, Keluarga Besar, Keluarga Inti/);
+
+    const stranger = await post(WIFE, "Kongkow");
+    assert.ok(stranger.isError);
+    assert.doesNotMatch(stranger.content, /Keluarga/, "others don't learn which groups Friday is in");
+    assert.equal(sent.length, 0);
+
+    const here = await runTool("send_group_message", { group: "Kongkow", text: "x" }, { chat: inGroup(ADMIN, "").chat, outbox: withGroups });
+    assert.match(here.content, /this chat/);
+    assert.equal(sent.length, 0);
+
+    const offered = async (from: { name: string; number: string }) => JSON.stringify(await toolsFor(dm(from, "").chat));
+    assert.match(await offered(ADMIN), /send_group_message/);
+    assert.doesNotMatch(await offered(WIFE), /send_group_message/);
   });
 
   it("/help shows the admin every command, and nobody else the admin ones", async () => {

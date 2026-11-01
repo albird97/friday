@@ -128,6 +128,10 @@ export async function startWhatsApp(onMessage: (msg: Incoming, outbox: Outbox) =
       if (!sent?.key.id) throw new Error("WhatsApp didn't accept the poll.");
       return { messageId: sent.key.id, secret };
     },
+    async groups() {
+      const groups = await sock.groupFetchAllParticipating();
+      return Object.values(groups).map((g) => ({ id: g.id, name: g.subject }));
+    },
     async groupSize(chatId) {
       const meta = await sock.groupMetadata(chatId).catch(() => undefined);
       return meta ? meta.participants.length - 1 : undefined;
