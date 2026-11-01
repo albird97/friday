@@ -151,7 +151,7 @@ case "${1:-}" in
 server {
     listen 80;
     listen [::]:80;
-    server_name $DOMAIN;
+    server_name $DOMAIN www.$DOMAIN;
     location / {
         limit_except GET { deny all; }
         proxy_pass http://127.0.0.1:3210;
@@ -167,7 +167,7 @@ EOF
       exit 1
     fi
     systemctl reload nginx
-    certbot --nginx -d "$DOMAIN" --non-interactive --redirect
+    certbot --nginx -d "$DOMAIN" -d "www.$DOMAIN" --non-interactive --redirect
     echo "https://$DOMAIN now reaches Friday."
     ;;
   google)
