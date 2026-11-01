@@ -1,0 +1,29 @@
+{
+  "botNumber": "6281775741000",
+  "requestText": "Halo Friday, aku mau coba",
+  "title": "Friday: asisten AI di WhatsApp",
+  "description": "Friday adalah asisten AI di WhatsApp. Chat seperti ke teman untuk bertanya, membuat pengingat, dokumen, gambar, dan banyak lagi.",
+  "hero": {
+    "lines": ["Asisten AI kamu,", "langsung di WhatsApp."],
+    "sub": "Chat seperti ke teman. Friday bisa jawab pertanyaan, ngingetin jadwal, bikin PDF dan Excel, gambar, sampai ngerti voice note.",
+    "note": "Tanpa aplikasi baru. Akses lewat undangan."
+  },
+  "story": {
+    "title": "Sehari bareng Friday",
+    "text": "Dari bangun tidur sampai mau tidur lagi. Begini rasanya punya Friday di WhatsApp."
+  },
+  "steps": [
+    { "title": "Minta akses", "text": "Ketuk tombolnya, lalu kirim pesan yang sudah terisi di WhatsApp." },
+    { "title": "Terima sambutan", "text": "Setelah disetujui, Friday menyapa kamu dan menjelaskan apa saja yang bisa dibantu." },
+    { "title": "Chat seperti biasa", "text": "Ketik atau kirim voice note. Tidak perlu aplikasi atau perintah khusus." }
+  ],
+  "limits": [
+    { "title": "Lewat undangan", "text": "Friday dikelola pribadi, jadi akses baru diberikan setelah disetujui pengelola." },
+    { "title": "50 pesan per hari", "text": "Batas ini berlaku untuk tiap orang, supaya Friday tetap jalan untuk semua." },
+    { "title": "Bisa salah", "text": "Seperti AI lainnya, Friday bisa keliru. Untuk hal penting, cek lagi ya." },
+    { "title": "Bukan produk resmi", "text": "Friday berjalan di WhatsApp, tapi tidak berafiliasi dengan WhatsApp atau Meta." }
+  ],
+  "final": {
+    "title": "Besok pagi, biar Friday yang ingetin."
+  }
+}

@@ -1,0 +1,118 @@
+{
+  "friday-01": {
+    "chat": "Friday",
+    "thread": [
+      { "from": "me", "kind": "text", "text": "Cuaca Bandung akhir pekan ini gimana?" },
+      { "from": "friday", "kind": "text", "text": "Sabtu cerah berawan, sore mungkin gerimis. Minggu lebih cerah. Bawa jaket tipis ya." }
+    ]
+  },
+  "friday-02": {
+    "chat": "Friday",
+    "story": { "time": "07.30", "sky": "pagi", "caption": "Cukup bilang sekali. Friday yang ingat tiap hari." },
+    "thread": [
+      { "from": "me", "kind": "text", "text": "Ingatkan aku minum obat tiap hari jam 8 pagi" },
+      { "from": "friday", "kind": "text", "text": "Siap! Saya ingatkan tiap hari jam 08.00." },
+      { "from": "friday", "kind": "text", "text": "⏰ Waktunya minum obat.", "time": "08.00" }
+    ]
+  },
+  "friday-03": {
+    "chat": "Friday",
+    "story": { "time": "09.00", "sky": "siang", "caption": "Minta file, langsung jadi di chat." },
+    "thread": [
+      { "from": "me", "kind": "text", "text": "Buatkan anggaran belanja bulanan dalam Excel" },
+      { "from": "friday", "kind": "text", "text": "Ini anggarannya, sudah saya pisah per kategori." },
+      {
+        "from": "friday",
+        "kind": "file",
+        "fileName": "Anggaran-Belanja.xlsx",
+        "ext": "xlsx",
+        "meta": "1 sheet",
+        "preview": [
+          ["Dapur", "2.500.000"],
+          ["Listrik dan air", "750.000"],
+          ["Sekolah", "1.200.000"],
+          ["Transport", "600.000"]
+        ]
+      }
+    ]
+  },
+  "friday-04": {
+    "chat": "Friday",
+    "story": { "time": "12.15", "sky": "siang", "caption": "Foto menu asing? Kirim saja." },
+    "thread": [
+      { "from": "me", "kind": "image", "src": "menu.jpg", "alt": "Foto menu restoran berbahasa Jepang di atas meja kayu", "caption": "Terjemahkan ke bahasa Indonesia." },
+      { "from": "friday", "kind": "text", "text": "Yang atas ramen kuah miso, 980 yen. Yang tengah nasi kari ayam, 850 yen. Yang bawah es teh hijau, 300 yen." }
+    ]
+  },
+  "friday-05": {
+    "chat": "Friday",
+    "story": { "time": "16.30", "sky": "sore", "caption": "Butuh gambar? Tinggal sebut." },
+    "thread": [
+      { "from": "me", "kind": "text", "text": "Gambar kartu ulang tahun tema dinosaurus" },
+      { "from": "friday", "kind": "image", "src": "kartu-dino.jpg", "alt": "Kartu ulang tahun bergambar dinosaurus lucu" }
+    ]
+  },
+  "friday-06": {
+    "chat": "Friday",
+    "story": { "time": "15.00", "sky": "sore", "caption": "Malas ngetik? Kirim voice note." },
+    "thread": [
+      { "from": "me", "kind": "voice", "seconds": 7 },
+      { "from": "friday", "kind": "text", "text": "Oke, rapatnya pindah ke Kamis jam 10. Mau saya buatkan pengingatnya?" }
+    ]
+  },
+  "friday-07": {
+    "chat": "Geng Kongkow",
+    "subtitle": "Dina, Rio, Sari, Friday",
+    "story": { "time": "18.00", "sky": "senja", "caption": "Di grup, Friday yang urus polling." },
+    "thread": [
+      { "from": "me", "kind": "text", "text": "@Friday kumpulin yang bisa kongkow Minggu jam 7 malam" },
+      {
+        "from": "friday",
+        "kind": "poll",
+        "question": "Kongkow Minggu jam 7 malam?",
+        "options": [
+          { "label": "Bisa", "votes": 5 },
+          { "label": "Telat sedikit", "votes": 2 },
+          { "label": "Nggak bisa", "votes": 1 }
+        ]
+      },
+      { "from": "me", "kind": "text", "text": "@Friday siapa aja yang ikut?" },
+      { "from": "friday", "kind": "text", "text": "Lima orang bisa, dua telat sedikit. Yang belum bisa cuma Bima." }
+    ]
+  },
+  "friday-08": {
+    "chat": "Friday",
+    "thread": [
+      { "from": "me", "kind": "text", "text": "Ingat ya, aku alergi kacang." },
+      { "from": "friday", "kind": "text", "text": "Noted, saya ingat." },
+      { "from": "me", "kind": "text", "text": "Rekomendasi camilan buat nonton malam ini dong" },
+      { "from": "friday", "kind": "text", "text": "Popcorn atau keripik singkong. Yang ada kacangnya saya lewati ya." }
+    ]
+  },
+  "friday-09": {
+    "chat": "Friday",
+    "thread": [
+      { "from": "me", "kind": "text", "text": "Bilang ke Sarah aku pulang jam 8." },
+      { "from": "friday", "kind": "text", "text": "Sudah saya sampaikan ke Sarah." }
+    ]
+  },
+  "friday-10": {
+    "chat": "Friday",
+    "thread": [
+      { "from": "me", "kind": "text", "text": "Reservasi meja 4 orang di Warung Sate Pak Budi, Sabtu jam 7 malam." },
+      { "from": "friday", "kind": "text", "text": "Nomornya saya temukan di Google Maps. Balas YA 1234 kalau boleh saya kirim pesannya." },
+      { "from": "me", "kind": "text", "text": "YA 1234" },
+      { "from": "friday", "kind": "text", "text": "📋 Beres! Meja untuk 4 orang, Sabtu jam 19.00, sudah dikonfirmasi." }
+    ]
+  },
+  "friday-11": {
+    "chat": "Friday",
+    "story": { "time": "20.30", "sky": "malam", "caption": "Sebelum tidur, cek agenda besok." },
+    "thread": [
+      { "from": "me", "kind": "text", "text": "Besok aku ada acara apa?" },
+      { "from": "friday", "kind": "text", "text": "Dari Calendar kamu: rapat tim jam 10.00 dan makan malam keluarga jam 19.00." },
+      { "from": "me", "kind": "text", "text": "Tambahkan jemput anak jam 3 sore" },
+      { "from": "friday", "kind": "text", "text": "Tambah acara: Jemput anak, besok 15.00. Balas YA 1234 untuk lanjut." }
+    ]
+  }
+}
