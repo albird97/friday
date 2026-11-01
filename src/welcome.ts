@@ -23,6 +23,7 @@ export function welcomeMessage(name: string): string {
     ...(transcriptionEnabled ? [feature("🎙️ *Mengerti voice note*", "Kirim voice note, nanti saya balas dengan teks")] : []),
     feature("📄 *Buat PDF, Word, Excel, dan PowerPoint*", `"Buatkan anggaran belanja bulanan dalam Excel"`),
     ...(imagesEnabled ? [feature("🎨 *Buat dan edit gambar*", `"Buatkan gambar ucapan ulang tahun bertema kucing"`)] : []),
+    feature("📈 *Analisis teknikal saham, emas, forex, dan crypto*", `"Analisis BBCA harian dan buatkan trading plan"`),
     feature("🧠 *Mengingat hal penting*", `"Ingat ya, aku alergi udang"`),
     feature(`📨 *Titip pesan ke ${admin}*`, `"Bilang ke ${admin} aku telat 15 menit"`),
     ...(googleEnabled ? [feature("🔗 *Terhubung ke akun Google milikmu*", `Kirim /google, lalu tulis "Besok aku ada acara apa?"`)] : []),

@@ -12,6 +12,8 @@ and it can:
   Friday answers in text)
 - 🧠 **Remember things** you tell it (birthdays, preferences) across conversations
 - 📨 **Pass messages** to other people ("tell Sarah I'll be late")
+- 📈 **Analyse markets** — stocks, forex, gold and crypto on any timeframe, with a chart, a trading plan and how often
+  that plan paid in the past
 
 ## How it works
 
@@ -101,6 +103,7 @@ Things to try:
 - "Tell Sarah I'll be home at 8"
 - *(in a group)* "@Friday see who can come to dinner on Saturday at 7" — sends a poll; later "@Friday who's coming?"
 - *(admin only)* "Post in the Kongkow group: we meet at 7" — Friday posts it as itself
+- "Analisis BBCA harian dan buatkan trading plan", then "kenapa SL-nya di situ?"
 
 ### Commands
 
@@ -187,6 +190,37 @@ sudo /opt/friday/app/scripts/linux-service.sh web fridayai.my.id
 sudo /opt/friday/app/scripts/linux-service.sh google fridayai.my.id
 ```
 
+## Market analysis
+
+Any contact can ask for technical analysis of Indonesian and US stocks, forex, gold, crypto, or anything Yahoo Finance
+lists, on any timeframe from 1 minute to months. Friday sends a chart with the analysis drawn on it (levels, swings,
+trend, a price range, entry, stop and targets) and explains it. Follow-up questions work in the same chat.
+
+- **Numbers come from code, not from Claude.** `src/market/` fetches real closed candles, computes everything, and
+  Claude only explains the result. Candles are free and need no key: Yahoo for stocks, forex and daily gold, Binance for
+  crypto and intraday gold. Yahoo's feed is unofficial, so it can stop working or limit the server for a while. Crypto and
+  intraday gold keep working if it does.
+- **It doesn't predict direction.** Tested on 32 instruments after costs, classic technical rules didn't beat random
+  entries on any timeframe, and shorter timeframes lost more. What did hold was the price range: its 80% band was right
+  78-80% of the time. So Friday never promises accuracy.
+- **Chance of profit is measured, not estimated.** Each plan shows how often the same setup on the same instrument and
+  timeframe reached each target and ended in profit, after costs, with the number of past cases, next to what random
+  entries did. The replay uses the plan's exact levels, and a gap past the entry costs what it would really cost. These
+  figures hold up: on daily candles, plans printed a 38.5% chance of profit at TP2 and 38.1% of those 11,267 trades got
+  there. That says how often a plan pays, not that it pays: the average was still slightly negative.
+- **Ready is rare and unproven.** A plan is only called ready on daily candles or longer, when its history beats random
+  entries by more than chance. Walked forward over 32 instruments that was about 1 signal in 20, at +0.26R ±0.28 per
+  trade: encouraging, not proof. Below daily candles the signals lost money after costs, so no edge is claimed there.
+- **Waiting scenarios aren't recommendations.** Most of the time Friday says to wait and gives two stop-order scenarios
+  so people have a plan either way. On their own those breakouts lost money on average after costs (-0.05R on daily
+  candles), which Friday shows rather than hides.
+- **Indonesian stocks** use IDX price steps and lots, and a falling stock reads "avoid", because retail traders can't
+  short them.
+
+It is off the website and the catalog (`pending` in `feature-map.json`) until the OJK rules on recommending securities
+are checked: POJK 6/2026 requires an investment adviser license for that. Friday tells people it isn't a licensed
+adviser, and never decides how much of their money to risk.
+
 ## Costs
 
 - **Claude** is pay-as-you-go on your API key (there's no free tier). With Opus 5.5 a typical message costs roughly
@@ -240,4 +274,4 @@ npm run dev       # restart on file changes
 
 Code map: `src/whatsapp.ts` (WhatsApp connection) → `src/bot.ts` (access, commands, attachments) → `src/agent.ts`
 (Claude loop) → `src/tools.ts` (reminders, memory, documents, images, messages). Documents are rendered locally in
-`src/docs/`; images go through `src/images.ts`.
+`src/docs/`; images go through `src/images.ts`; market analysis lives in `src/market/`.

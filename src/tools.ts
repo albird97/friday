@@ -8,6 +8,10 @@ import { sheetsToXlsx, sheetToCsv } from "./docs/sheets.js";
 import { slidesToPptx } from "./docs/slides.js";
 import { imagesEnabled, loadImage, makeImage, saveImage, type ImageResult } from "./images.js";
 import { errandTools, runErrandTool } from "./errands.js";
+import { analyzeMarket, type Analysis } from "./market/analysis.js";
+import { MARKETS } from "./market/candles.js";
+import { chartOf } from "./market/chart.js";
+import { reportOf } from "./market/report.js";
 import { addMemory, forgetMemory, SHARED } from "./memory.js";
 import { onehubTools, runOnehubTool } from "./onehub.js";
 import { pollInChat, pollResults, savePoll } from "./polls.js";
@@ -78,6 +82,19 @@ async function sendMadeImage(ctx: ToolContext, sendTo: string | undefined, image
   const id = saveImage(ctx.chat.chatId, image.mimetype, image.data);
   await ctx.outbox.sendImage(to.chatId, { ...image, caption });
   return `Sent image #${id} to ${to.label}. It's already delivered, so reply with one short line at most.`;
+}
+
+/** A picture that can't be drawn or sent must not cost them the analysis itself. */
+async function sendChart(ctx: ToolContext, analysis: Analysis): Promise<string> {
+  try {
+    const data = await chartOf(analysis);
+    const id = saveImage(ctx.chat.chatId, "image/png", data);
+    await ctx.outbox.sendImage(ctx.chat.chatId, { data, mimetype: "image/png" });
+    return `Chart sent as image #${id}.`;
+  } catch (err) {
+    console.error("market chart failed", err);
+    return "The chart couldn't be sent: say so, and ignore what's written below about it being in the chat.";
+  }
 }
 
 const IMAGE_TOOLS: Tool[] = [
@@ -328,6 +345,30 @@ const BASE_TOOLS: Tool[] = [
       if (!poll) return poll_id === undefined ? "No poll has been sent in this chat yet." : `No poll #${poll_id} in this chat.`;
       const members = ctx.chat.isGroup ? await ctx.outbox.groupSize?.(ctx.chat.chatId) : undefined;
       return pollResults(poll, members);
+    },
+  }),
+  tool({
+    name: "market_analysis",
+    description:
+      "Technical analysis of a stock, forex pair, gold, crypto or other market on any timeframe, computed from real " +
+      "candles: trend, support and resistance, a tested price range, a trading plan with entry, stop and targets, and " +
+      "the chance of profit from that plan's own history. Sends a chart with all of this drawn on it to the chat, and " +
+      "returns the numbers plus how to answer. Use it for any request for an analysis, a signal, levels or a trading plan.",
+    schema: z.object({
+      market: z.enum(MARKETS).describe('"idx" Indonesian stocks, "us" US stocks, "forex", "gold", "crypto", or "other" for anything else.'),
+      symbol: z
+        .string()
+        .optional()
+        .describe('Ticker, e.g. "BBCA", "NVDA", "EURUSD", "BTC". For "other" use the Yahoo Finance symbol: "^JKSE" IHSG, "^GSPC" S&P 500, "CL=F" oil, "SI=F" silver, "7203.T" Toyota. Not needed for gold.'),
+      timeframe: z
+        .string()
+        .default("1d")
+        .describe('Candle length, any whole number of minutes, hours, days, weeks or months, e.g. "15m", "1h", "4h", "1d", "1w", "1mo". If they say scalping use 15m, swing 4h or 1d, long term 1w.'),
+    }),
+    async run(input, ctx) {
+      requireContact(ctx, "use market analysis");
+      const analysis = await analyzeMarket(input.market, input.symbol, input.timeframe);
+      return `${await sendChart(ctx, analysis)}\n\n${reportOf(analysis)}`;
     },
   }),
 ];

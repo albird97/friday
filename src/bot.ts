@@ -141,7 +141,7 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
       await reply(
         [
           `*${config.BOT_NAME}* — just talk to me normally${chat.isGroup ? ` (mention me, reply to me, or start with "${config.BOT_NAME},")` : ""}.`,
-          `I can answer questions, search the web, set reminders, read photos and PDFs${transcriptionEnabled ? ", understand voice notes" : ""}, make PDF / Word / Excel / PowerPoint files${imagesEnabled ? ", and create or edit pictures" : ""}.`,
+          `I can answer questions, search the web, set reminders, read photos and PDFs${transcriptionEnabled ? ", understand voice notes" : ""}, analyse stock, forex, gold and crypto charts, make PDF / Word / Excel / PowerPoint files${imagesEnabled ? ", and create or edit pictures" : ""}.`,
           "",
           "/reset — start a fresh conversation (keeps memories and reminders)",
           "/id — show this chat's id and your number",
