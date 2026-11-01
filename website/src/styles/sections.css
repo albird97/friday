@@ -61,10 +61,11 @@ html.motion .footer {
   aspect-ratio: 1;
   border-radius: 50%;
   background: radial-gradient(
-    circle,
-    oklch(0.98 0.07 100) 0 30%,
-    oklch(0.96 0.09 92 / 0.5) 48%,
-    oklch(0.94 0.1 85 / 0) 70%
+    circle closest-side,
+    oklch(0.98 0.07 100 / 0.95) 0 26%,
+    oklch(0.97 0.08 96 / 0.55) 42%,
+    oklch(0.95 0.09 90 / 0.18) 68%,
+    oklch(0.94 0.1 85 / 0) 100%
   );
 }
 
@@ -72,7 +73,7 @@ html.motion .footer {
   top: 0;
   left: 0;
   width: min(74vmin, 640px);
-  margin: min(-37vmin, -320px) 0 0 min(-37vmin, -320px);
+  margin: max(-37vmin, -320px) 0 0 max(-37vmin, -320px);
   will-change: transform;
 }
 
@@ -192,10 +193,13 @@ html.motion .footer {
 
 .hero h1 .line > span {
   display: block;
+}
+
+html.intro .hero h1 .line > span {
   animation: rise 0.7s var(--ease-out) backwards;
 }
 
-.hero h1 .line:nth-child(2) > span {
+html.intro .hero h1 .line:nth-child(2) > span {
   animation-delay: 0.08s;
 }
 
@@ -230,7 +234,7 @@ html.motion .footer {
   perspective: 1400px;
 }
 
-.hero__phone {
+html.intro .hero__phone {
   animation: phone-in 0.9s var(--ease-out) backwards;
 }
 
@@ -253,6 +257,18 @@ html.motion .footer {
 @keyframes phone-in {
   from {
     transform: translateY(48px);
+  }
+}
+
+/* Small phones: keep the first chat bubble on the first screen. */
+@media (max-width: 899px) and (max-height: 700px) {
+  .hero {
+    gap: 16px;
+    padding-top: 72px;
+  }
+
+  .hero__note {
+    display: none;
   }
 }
 
@@ -435,7 +451,7 @@ html.motion .footer {
 
 .story.is-live .scene__caption {
   margin-top: 6px;
-  font-size: clamp(1.375rem, 3.2svh, 1.75rem);
+  font-size: clamp(1.5rem, 3.2svh, 1.75rem);
 }
 
 .story.is-live .scene__phone {
@@ -945,8 +961,8 @@ html.motion .footer {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hero h1 .line > span,
-  .hero__phone,
+  html.intro .hero h1 .line > span,
+  html.intro .hero__phone,
   .ticker__row ul {
     animation: none;
   }

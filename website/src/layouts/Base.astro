@@ -39,7 +39,11 @@ const jsonLd = {
     <meta property="og:image" content={image} />
     <meta property="og:url" content={Astro.site} />
     <meta name="twitter:card" content="summary_large_image" />
-    <script is:inline>document.documentElement.classList.add("js");</script>
+    <script is:inline>
+      // A CSS entrance stalls on its first frame in a hidden tab, so the hero only gets one when someone can see it.
+      document.documentElement.classList.add("js");
+      if (document.visibilityState === "visible") document.documentElement.classList.add("intro");
+    </script>
     <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
   </head>
   <body>
