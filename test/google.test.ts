@@ -1,4 +1,4 @@
-import { ADMIN, WIFE } from "./setup.js";
+import { ADMIN, claude, WIFE } from "./setup.js";
 import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
 import { handleIncoming, type Incoming } from "../src/bot.js";
@@ -228,6 +228,24 @@ describe("changing things in Google", () => {
     const result = await tool(chatOf(WIFE), "google_calendar_events", {});
     assert.match(result.content, /Dokter gigi/);
     assert.ok(!sent.at(-1)!.text.includes("YA "));
+  });
+
+  it("keeps Google data out of the server logs", async () => {
+    await connect(ADMIN, "albert");
+    claude.reset();
+    claude.replies.push({ content: [{ type: "tool_use", id: "t1", name: "google_calendar_events", input: {} }], stop_reason: "tool_use" });
+    claude.replies.push({ content: [{ type: "text", text: "Ada dokter gigi." }], stop_reason: "end_turn" });
+
+    const logged: string[] = [];
+    const log = console.log;
+    console.log = (...args: unknown[]) => void logged.push(args.join(" "));
+    try {
+      await say(chatOf(ADMIN), "besok ada apa?");
+    } finally {
+      console.log = log;
+    }
+    assert.ok(logged.some((l) => l.includes("tool google_calendar_events")));
+    assert.ok(!logged.some((l) => l.includes("Dokter gigi")));
   });
 
   it("sends nothing until the person answers the code, and shows the real recipient", async () => {
