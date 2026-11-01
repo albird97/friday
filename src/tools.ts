@@ -358,15 +358,16 @@ function inputSchema(schema: z.ZodObject) {
 }
 
 /**
- * Tool definitions sent to Claude: ours plus Anthropic's server-side web search and fetch. The cache breakpoint on
- * the last one caches all tool definitions for an hour, shared by every chat (they're identical everywhere).
+ * Tool definitions sent to Claude: ours plus Anthropic's server-side web search and fetch. The cache breakpoint goes
+ * on our last tool, not on the web tools: the API ignores one there. It caches our definitions for an hour, shared by
+ * every chat; the web tools' definitions are cached by the breakpoint in the system prompt (see systemBlocks).
  */
 const toParam = (t: Tool) => ({ name: t.name, description: t.description, input_schema: inputSchema(t.schema), eager_input_streaming: true });
 
 export const toolParams: BetaToolUnion[] = [
-  ...TOOLS.map(toParam),
+  ...TOOLS.map((t, i) => ({ ...toParam(t), ...(i === TOOLS.length - 1 && { cache_control: { type: "ephemeral" as const, ttl: "1h" as const } }) })),
   { type: "web_search_20260209", name: "web_search", max_uses: 5 },
-  { type: "web_fetch_20260209", name: "web_fetch", max_uses: 5, cache_control: { type: "ephemeral", ttl: "1h" } },
+  { type: "web_fetch_20260209", name: "web_fetch", max_uses: 5 },
 ];
 
 /**

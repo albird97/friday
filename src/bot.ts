@@ -9,10 +9,11 @@ import { syncCatalog } from "./catalog.js";
 import { addContact, allContacts, isAdmin, removeContact, takeDailyQuota } from "./contacts.js";
 import { db } from "./db.js";
 import { imagesEnabled, saveImage } from "./images.js";
+import { currentModel, FAMILIES, isFamily, latestModel, setModel } from "./model.js";
 import { confirmErrand, errandFor, errandIncoming, errandNotes } from "./errands.js";
 import { actionNotes, confirmAction } from "./onehub.js";
 import { EVERYWHERE, isPaused, parseDuration, pause, resume } from "./pause.js";
-import { deleteSession, expireSession } from "./session.js";
+import { deleteSession, expireChatSessions, expireSession } from "./session.js";
 import { statusReport } from "./status.js";
 import { isStyle, setStyle, STYLES, styleOf } from "./styles.js";
 import { MAX_VOICE_BYTES, transcribe, transcriptionEnabled } from "./transcribe.js";
@@ -114,6 +115,7 @@ export const ADMIN_HELP = [
   "/style chill | formal | funny | ngeyel | normal — gaya bicara di chat itu (/gaya juga bisa)",
   "/diam 30m | 2j | 1h — di grup: Friday diam sementara (h = hari)",
   "/bangun — di grup: akhiri /diam",
+  "/switch opus | sonnet | haiku — ganti model untuk semua chat (selalu versi terbaru)",
   "/stop — darurat: Friday diam di semua chat",
   "/lanjut — nyalakan lagi setelah /stop",
   "/backup — kirim cadangan database",
@@ -222,6 +224,28 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
       setStyle(chat.chatId, chat.chatName, choice === "normal" ? undefined : choice);
       expireSession(chat.chatId);
       await toAdmin(`🎭 Gaya Friday di ${where} sekarang *${choice}*, mulai pesan berikutnya.`);
+      return true;
+    }
+    case "/switch": {
+      if (!admin) return false;
+      const family = args[0]?.toLowerCase();
+      if (!family || !isFamily(family)) {
+        const hint = family ? `Model "${family}" tidak ada.` : `🧠 Model sekarang: *${currentModel()}*`;
+        await toAdmin(`${hint}\nPilihan: ${FAMILIES.join(", ")}\nContoh: /switch sonnet`);
+        return true;
+      }
+      try {
+        const model = await latestModel(family);
+        if (model === currentModel()) {
+          await toAdmin(`🧠 Friday sudah memakai *${model}*.`);
+          return true;
+        }
+        setModel(model);
+        expireChatSessions();
+        await toAdmin(`🧠 Semua chat sekarang memakai *${model}*, mulai pesan berikutnya. Tiap chat lanjut dari ringkasan singkat obrolan terakhir.`);
+      } catch (err) {
+        await toAdmin(`⚠️ Model gagal diganti: ${err instanceof Error ? err.message : String(err)}`);
+      }
       return true;
     }
     case "/stop":

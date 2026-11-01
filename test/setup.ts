@@ -63,6 +63,17 @@ function sse(reply: ScriptedReply): string {
 }
 
 const server = http.createServer((req, res) => {
+  if (req.method === "GET" && req.url?.startsWith("/v1/models")) {
+    const data = ["claude-opus-4-5-20251101", "claude-opus-5", "claude-opus-5-5", "claude-sonnet-5", "claude-sonnet-5-5", "claude-haiku-5-5"].map((id) => ({
+      id,
+      type: "model",
+      display_name: id,
+      created_at: "2026-01-01T00:00:00Z",
+    }));
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ data, has_more: false, first_id: data[0].id, last_id: data.at(-1)!.id }));
+    return;
+  }
   let raw = "";
   req.on("data", (c) => (raw += c));
   req.on("end", () => {

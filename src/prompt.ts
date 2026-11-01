@@ -5,6 +5,7 @@ import type { Memory } from "./memory.js";
 import { errandsAllowed } from "./errands.js";
 import { onehubAllowed } from "./onehub.js";
 import { STYLES, styleOf } from "./styles.js";
+import type { BetaTextBlockParam } from "@anthropic-ai/sdk/resources/beta/messages/messages.js";
 import type { ChatContext } from "./types.js";
 
 const name = config.BOT_NAME;
@@ -83,6 +84,22 @@ within the goal, and everything both ways is shown here. Questions the errand ca
 (and as system notes): pass the answer, or any new instruction, with errand_reply. Use list_errands and end_errand as \
 needed. Only for errands ${person} asked for — never marketing, spam, or contacting people who wouldn't expect it.`;
 
+const CHAT_SECTION = "\n\n# This chat\n";
+
+/**
+ * Splits a chat's system prompt where it starts being specific to the chat, with a cache breakpoint on the part every
+ * chat shares. New sessions then read the tool definitions and this text from cache for an hour instead of paying to
+ * write them again.
+ */
+export function systemBlocks(system: string): string | BetaTextBlockParam[] {
+  const end = system.indexOf(CHAT_SECTION);
+  if (end < 0) return system; // an errand's prompt shares nothing
+  return [
+    { type: "text", text: system.slice(0, end), cache_control: { type: "ephemeral", ttl: "1h" } },
+    { type: "text", text: system.slice(end) },
+  ];
+}
+
 export function buildSystemPrompt(chat: ChatContext, memories: Memory[], recap: string): string {
   // Only the admin, in their private chat, gets the contact list; everyone else names who they mean themselves.
   const contacts =
@@ -94,7 +111,7 @@ export function buildSystemPrompt(chat: ChatContext, memories: Memory[], recap: 
 reply to you, or start with "${name}". Address people by name when it helps.`
     : `You're in a private chat with ${chat.sender.name}.`;
 
-  const sections = [BASE.replace("{{IMAGES}}", imagesEnabled ? IMAGES_ON : IMAGES_OFF), `# This chat\n${where}\n${contacts}`];
+  const sections = [BASE.replace("{{IMAGES}}", imagesEnabled ? IMAGES_ON : IMAGES_OFF), `${CHAT_SECTION.trimStart()}${where}\n${contacts}`];
   const style = styleOf(chat.chatId);
   if (style) sections.push(STYLES[style]);
   // Groups always get this: their prompt is written once for whoever spoke first, and everyone reads the answers.

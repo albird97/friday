@@ -9,7 +9,8 @@ import type {
 import { config } from "./config.js";
 import { chunk, toWhatsApp } from "./format.js";
 import { memoriesFor, SHARED } from "./memory.js";
-import { buildSystemPrompt } from "./prompt.js";
+import { currentModel } from "./model.js";
+import { buildSystemPrompt, systemBlocks } from "./prompt.js";
 import { isStale, loadSession, recapOf, saveSession, type Session } from "./session.js";
 import { runTool, toolsFor } from "./tools.js";
 import type { ChatContext, Outbox } from "./types.js";
@@ -66,14 +67,14 @@ async function runTurn(session: Session, conv: Conversation): Promise<boolean> {
     client ??= new Anthropic({ maxRetries: 3 });
     const response = await client.beta.messages
       .stream({
-        model: config.FRIDAY_MODEL,
+        model: currentModel(),
         max_tokens: 32_000,
         betas: BETAS,
         fallbacks: "default",
         thinking: { type: "adaptive", block_binding: { prefix_mismatch_behavior: "drop_block" } },
         output_config: { effort: config.FRIDAY_EFFORT },
         cache_control: { type: "ephemeral" },
-        system: session.system,
+        system: systemBlocks(session.system),
         tools: conv.tools,
         messages: session.messages,
       })

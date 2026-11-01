@@ -130,6 +130,10 @@ db.exec(`
     until       INTEGER
   );
   -- until = NULL: paused until the admin resumes it.
+  CREATE TABLE IF NOT EXISTS settings (
+    key         TEXT PRIMARY KEY,
+    value       TEXT NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS chat_styles (
     chat_id     TEXT PRIMARY KEY,
     chat_name   TEXT NOT NULL,

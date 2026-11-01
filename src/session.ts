@@ -38,6 +38,11 @@ export function expireSession(chatId: string): void {
   db.prepare("UPDATE sessions SET updated_at = 0 WHERE chat_id = ?").run(chatId);
 }
 
+/** The same for every chat, after a model change: another model can't reuse the cache and replays history poorly. */
+export function expireChatSessions(): void {
+  db.prepare("UPDATE sessions SET updated_at = 0 WHERE chat_id NOT LIKE 'errand:%'").run();
+}
+
 export function isStale(s: Session, now = Date.now()): boolean {
   return now - s.updatedAt > config.SESSION_IDLE_HOURS * 3_600_000 || s.tokens > config.SESSION_MAX_TOKENS;
 }

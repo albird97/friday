@@ -64,6 +64,19 @@ beforeEach(() => {
 });
 
 describe("conversation flow", () => {
+  it("marks what every chat shares for the cache: our tools and the common part of the system prompt", async () => {
+    claude.replies.push({ content: [text("Hi")], stop_reason: "end_turn" });
+    await handleIncoming(dm({ name: "Rani", number: "6286666666666" }, "halo"), outbox);
+    const { system, tools } = claude.requests[0].body;
+    assert.equal(system.length, 2);
+    assert.deepEqual(system[0].cache_control, { type: "ephemeral", ttl: "1h" });
+    assert.doesNotMatch(system[0].text, /Rani/);
+    assert.match(system[1].text, /# This chat\n[\s\S]*Rani/);
+    const marked = tools.filter((t: any) => t.cache_control);
+    assert.equal(marked.length, 1);
+    assert.equal(marked[0].type, undefined, "the API ignores a breakpoint on a server tool");
+  });
+
   it("runs tools, replies in WhatsApp format, and sends the right request", async () => {
     claude.replies.push(
       { content: [{ type: "thinking" }, toolUse("tu_1", "create_reminder", { text: "Call the bank", when: "2099-01-01T17:00" })], stop_reason: "tool_use" },
@@ -98,7 +111,7 @@ describe("conversation flow", () => {
     await handleIncoming(dm(ADMIN, "thanks"), outbox);
     const [req] = claude.requests;
     assert.equal(req.body.messages.length, 5);
-    assert.equal(req.body.system, before.system); // unchanged prefix keeps the cache and thinking valid
+    assert.equal(req.body.system.map((b: any) => b.text).join(""), before.system); // unchanged prefix keeps the cache and thinking valid
   });
 
   it("creates and sends documents", async () => {

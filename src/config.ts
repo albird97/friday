@@ -30,8 +30,8 @@ const Env = z.object({
   PAIRING_NUMBER: z.string().default(""),
   DATA_DIR: z.string().default("./data"),
   // A chat's conversation starts fresh after this much silence, or once it grows past this many tokens.
-  SESSION_IDLE_HOURS: z.coerce.number().positive().default(6),
-  SESSION_MAX_TOKENS: z.coerce.number().positive().default(80_000),
+  SESSION_IDLE_HOURS: z.coerce.number().positive().default(1),
+  SESSION_MAX_TOKENS: z.coerce.number().positive().default(40_000),
   LOG_LEVEL: z.string().default("info"),
   // onehub (the business back office). Numbers that may use it, in private chats only: "6281234567890,6289876543210".
   ONEHUB_USERS: z.string().default(""),

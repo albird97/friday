@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { beforeEach, describe, it } from "node:test";
 import { handleIncoming, type Incoming } from "../src/bot.js";
+import { currentModel, newestOf } from "../src/model.js";
 import { parseDuration } from "../src/pause.js";
 import { duration } from "../src/status.js";
 import type { Outbox } from "../src/types.js";
@@ -169,6 +170,53 @@ describe("secret admin commands", () => {
     answer("Oke.");
     await handleIncoming(inGroup(friend, "Friday, halo"), outbox);
     assert.doesNotMatch(JSON.stringify(claude.requests.at(-1)!.body.system), /# Style/);
+  });
+
+  it("/switch moves every chat to the newest version of a model family", async () => {
+    answer("Halo.");
+    await handleIncoming(dm(ADMIN, "halo sebelum ganti"), outbox);
+    assert.equal(claude.requests.at(-1)!.body.model, "claude-opus-5-5");
+
+    sent = [] as Sent[];
+    await handleIncoming(inGroup(ADMIN, "/switch sonnet"), outbox);
+    assert.equal(sent[0].chatId, private_(ADMIN.number));
+    assert.match(sent[0].text!, /Semua chat sekarang memakai \*claude-sonnet-5-5\*/);
+
+    for (const incoming of [dm(ADMIN, "halo lagi"), inGroup({ name: "Fani", number: "6287777777777" }, "Friday, halo")]) {
+      answer("Halo.");
+      await handleIncoming(incoming, outbox);
+      assert.equal(claude.requests.at(-1)!.body.model, "claude-sonnet-5-5", "private and group, admin or not");
+    }
+    assert.match(JSON.stringify(claude.requests.at(-2)!.body.system), /Earlier in this chat[\s\S]*halo sebelum ganti/, "a chat carries on from a recap");
+
+    sent = [] as Sent[];
+    await handleIncoming(dm(ADMIN, "/switch"), outbox);
+    assert.match(sent[0].text!, /Model sekarang: \*claude-sonnet-5-5\*[\s\S]*Pilihan: opus, sonnet, haiku/);
+    await handleIncoming(dm(ADMIN, "/switch gemini"), outbox);
+    assert.match(sent[1].text!, /tidak ada/);
+    await handleIncoming(dm(ADMIN, "/switch sonnet"), outbox);
+    assert.match(sent[2].text!, /sudah memakai/);
+    assert.equal(currentModel(), "claude-sonnet-5-5");
+
+    await handleIncoming(dm(ADMIN, "/switch haiku"), outbox);
+    assert.equal(currentModel(), "claude-haiku-5-5");
+    await handleIncoming(dm(ADMIN, "/switch opus"), outbox);
+    assert.equal(currentModel(), "claude-opus-5-5");
+  });
+
+  it("only the admin can switch models", async () => {
+    answer("Hmm?");
+    await handleIncoming(dm({ name: "Gita", number: "6288888888888" }, "/switch haiku"), outbox);
+    assert.equal(currentModel(), "claude-opus-5-5");
+    assert.equal(sent[0].text, "Hmm?");
+  });
+
+  it("picks a family's highest version, whatever order the API lists them in", () => {
+    const ids = ["claude-opus-4-8", "claude-opus-5-5", "claude-opus-5", "claude-opus-4-5-20251101", "claude-sonnet-5-5", "claude-haiku-4-5-20251001", "claude-fable-5-1"];
+    assert.equal(newestOf("opus", ids), "claude-opus-5-5");
+    assert.equal(newestOf("opus", [...ids, "claude-opus-6"]), "claude-opus-6");
+    assert.equal(newestOf("haiku", ids), "claude-haiku-4-5-20251001");
+    assert.equal(newestOf("sonnet", ["claude-opus-5"]), undefined);
   });
 
   it("/help shows the admin every command, and nobody else the admin ones", async () => {

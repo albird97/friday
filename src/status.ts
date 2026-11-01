@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { config } from "./config.js";
 import { db } from "./db.js";
+import { currentModel } from "./model.js";
 import { activePauses, describePause } from "./pause.js";
 import { allStyles } from "./styles.js";
 import { formatDateTime, localDay } from "./time.js";
@@ -52,7 +53,7 @@ export function statusReport(now = new Date()): string {
       "🩺 *Status Friday*",
       `✅ Menyala ${duration(now.getTime() - startedAt.getTime())} (sejak ${formatDateTime(startedAt)})`,
       `Versi: ${version}`,
-      `Model: ${config.FRIDAY_MODEL} (effort ${config.FRIDAY_EFFORT})`,
+      `Model: ${currentModel()} (effort ${config.FRIDAY_EFFORT})`,
       `Memori: ${mb(process.memoryUsage().rss)} · database ${mb(dbSize())}`,
       `Pengingat aktif: ${reminders}`,
     ].join("\n"),
