@@ -3,6 +3,7 @@ import type { BetaToolUnion } from "@anthropic-ai/sdk/resources/beta/messages/me
 import { z } from "zod";
 import { config } from "./config.js";
 import { db } from "./db.js";
+import { clip as cutText } from "./format.js";
 import { google, googleAccount, googleAllowed, SCOPES, type Scope } from "./google.js";
 import { loadImage } from "./images.js";
 import type { ChatContext, Outbox } from "./types.js";
@@ -41,7 +42,7 @@ type App<S extends z.ZodObject = z.ZodObject> = {
 };
 const app = <S extends z.ZodObject>(t: App<S>) => t as unknown as App;
 
-const clip = (text: string) => (text.length > MAX_CHARS ? `${text.slice(0, MAX_CHARS)}\n[…cut, ${text.length} characters in all]` : text);
+const clip = (text: string) => (text.length > MAX_CHARS ? `${cutText(text, MAX_CHARS)}\n[…cut, ${text.length} characters in all]` : text);
 const line = (text: string) => text.replace(/[\r\n]+/g, " ").trim();
 const list = (rows: string[], none: string) => (rows.length ? clip(rows.join("\n")) : none);
 const base64url = (text: string | Buffer) => Buffer.from(text).toString("base64url");
@@ -262,7 +263,7 @@ const DRIVE_TOOLS = [
     description: "Propose adding text to the end of an existing Google Doc.",
     scope: SCOPES.docs,
     schema: z.object({ document_id: z.string(), document_name: z.string(), text: z.string().min(1) }),
-    preview: (i) => `Tambah teks ke *${line(i.document_name)}*:\n${i.text.slice(0, 300)}`,
+    preview: (i) => `Tambah teks ke *${line(i.document_name)}*:\n${cutText(i.text, 300)}`,
     async run({ document_id, document_name, text }, { number }) {
       const url = `${DOCS}/${encodeURIComponent(document_id)}`;
       const doc = await google<{ body: { content: { endIndex?: number }[] } }>(number, url, { query: { fields: "body(content(endIndex))" } });
@@ -404,7 +405,7 @@ async function replyHeaders(number: string, id: string | undefined): Promise<{ e
 }
 
 const mailFields = { to: z.email(), subject: z.string().min(1), body: z.string().min(1), reply_to_id: z.string().optional().describe("The message id, when this answers an email.") };
-const mailPreview = (verb: string) => (i: { to: string; subject: string; body: string }) => `${verb} ke: *${line(i.to)}*\nSubjek: ${line(i.subject)}\n\n${i.body.slice(0, 700)}${i.body.length > 700 ? "…" : ""}`;
+const mailPreview = (verb: string) => (i: { to: string; subject: string; body: string }) => `${verb} ke: *${line(i.to)}*\nSubjek: ${line(i.subject)}\n\n${cutText(i.body, 700)}${i.body.length > 700 ? "…" : ""}`;
 
 const GMAIL_TOOLS = [
   app({

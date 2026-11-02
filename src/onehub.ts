@@ -4,6 +4,7 @@ import pg from "pg";
 import { z } from "zod";
 import { config } from "./config.js";
 import { db } from "./db.js";
+import { clip } from "./format.js";
 import type { ChatContext, Outbox } from "./types.js";
 
 // onehub is the family business's back office. Friday can read its database through a read-only role, and run a
@@ -57,7 +58,7 @@ async function select(query: string, params: unknown[] = []): Promise<pg.QueryAr
 function cellText(value: unknown): string {
   if (value === null || value === undefined) return "";
   const text = typeof value === "object" ? JSON.stringify(value) : String(value);
-  return text.replace(/\s+/g, " ").slice(0, 300);
+  return clip(text.replace(/\s+/g, " "), 300);
 }
 
 /** Rows as "a | b | c" lines under a header, capped so one query can't flood the conversation. */
@@ -65,7 +66,7 @@ export function formatRows(fields: string[], rows: unknown[][]): string {
   if (rows.length === 0) return "No rows.";
   const lines = [fields.join(" | "), ...rows.slice(0, MAX_ROWS).map((row) => row.map(cellText).join(" | "))];
   let text = lines.join("\n");
-  if (text.length > MAX_CHARS) text = `${text.slice(0, MAX_CHARS)}\n…(cut off)`;
+  if (text.length > MAX_CHARS) text = `${clip(text, MAX_CHARS)}\n…(cut off)`;
   const more = rows.length > MAX_ROWS ? ` (showing the first ${MAX_ROWS}; aggregate or filter for the rest)` : "";
   return `${rows.length} row${rows.length === 1 ? "" : "s"}${more}\n${text}`;
 }

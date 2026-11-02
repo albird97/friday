@@ -17,6 +17,7 @@ process.env.ANTHROPIC_API_KEY = "test-key";
 delete process.env.ANTHROPIC_AUTH_TOKEN;
 process.env.ANTHROPIC_BASE_URL = "http://127.0.0.1:9"; // replaced below once the fake API is listening; never the real API
 process.env.DAILY_MESSAGE_LIMIT = "3";
+process.env.SWITCH_USERS = `${WIFE.number},6286666666666`;
 process.env.IMAGE_PROVIDER = "cloudflare";
 process.env.GOOGLE_CLIENT_ID = "test-client";
 process.env.GOOGLE_CLIENT_SECRET = "test-secret";

@@ -10,8 +10,9 @@ import sharp from "sharp";
 import { syncCatalog } from "./catalog.js";
 import { addContact, allContacts, contactByNumber, isAdmin, removeContact, takeDailyQuota } from "./contacts.js";
 import { db } from "./db.js";
+import { clip } from "./format.js";
 import { imagesEnabled, saveImage } from "./images.js";
-import { currentModel, FAMILIES, isFamily, latestModel, setModel } from "./model.js";
+import { chatModel, currentModel, FAMILIES, isFamily, latestModel, setChatModel, setModel } from "./model.js";
 import { confirmErrand, errandFor, errandIncoming, errandNotes } from "./errands.js";
 import { connectMessage, disconnect, googleAccount, googleAllowed, googleEnabled, youtubeMessage } from "./google.js";
 import { confirmGoogle, googleNotes } from "./googleapps.js";
@@ -123,7 +124,8 @@ export const ADMIN_HELP = [
   "/style chill | formal | funny | ngeyel | normal — gaya bicara di chat itu (/gaya juga bisa)",
   "/diam 30m | 2j | 1h — di grup: Friday diam sementara (h = hari)",
   "/bangun — di grup: akhiri /diam",
-  "/switch opus | sonnet | haiku — ganti model untuk semua chat (selalu versi terbaru)",
+  "/switch opus | sonnet | haiku | default — ganti model di chat itu saja (selalu versi terbaru)",
+  "/switch semua opus | sonnet | haiku — ganti model semua chat yang tidak memilih sendiri",
   "/stop — darurat: Friday diam di semua chat",
   "/lanjut — nyalakan lagi setelah /stop",
   "/backup — kirim cadangan database",
@@ -148,6 +150,7 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
           "/reset — start a fresh conversation (keeps memories and reminders)",
           "/id — show this chat's id and your number",
           ...(googleEnabled ? ["/google — hubungkan akun Google milikmu (/google youtube untuk YouTube, /google putus untuk memutus)"] : []),
+          ...(!admin && !chat.isGroup && config.switchUsers.includes(chat.sender.number) ? ["/switch opus | sonnet | haiku | default — pilih model Claude untuk chat ini"] : []),
           // The admin sees every command, the unlisted ones too, but only in their private chat.
           ...(admin && !chat.isGroup ? ["", ...ADMIN_HELP] : []),
         ].join("\n"),
@@ -267,24 +270,52 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
       return true;
     }
     case "/switch": {
-      if (!admin) return false;
-      const family = args[0]?.toLowerCase();
-      if (!family || !isFamily(family)) {
-        const hint = family ? `Model "${family}" tidak ada.` : `🧠 Model sekarang: *${currentModel()}*`;
-        await toAdmin(`${hint}\nPilihan: ${FAMILIES.join(", ")}\nContoh: /switch sonnet`);
+      // Applies to the chat it's sent in. The admin can use it anywhere, SWITCH_USERS only in their own private chat,
+      // and "/switch semua …" (admin) sets the model of every chat that hasn't chosen its own.
+      if (!(admin || (!chat.isGroup && config.switchUsers.includes(chat.sender.number)))) return false;
+      const answer = chat.isGroup ? toAdmin : reply;
+      const everywhere = admin && args[0]?.toLowerCase() === "semua";
+      const family = args[everywhere ? 1 : 0]?.toLowerCase();
+      const here = chat.isGroup ? `*${chat.chatName}*` : "chat ini";
+      const Here = chat.isGroup ? here : "Chat ini";
+      const options = `Pilihan: ${FAMILIES.join(", ")}${everywhere ? "" : ", default"}\nContoh: /switch ${everywhere ? "semua " : ""}sonnet`;
+      if (!family) {
+        const own = chatModel(chat.chatId);
+        const lines = [
+          everywhere ? `🧠 Model semua chat: *${currentModel()}*` : `🧠 Model di ${here}: *${currentModel(chat.chatId)}*${own ? "" : " (ikut default)"}`,
+          ...(admin && !everywhere ? [`Default semua chat: *${currentModel()}* (/switch semua <model>)`] : []),
+          options,
+        ];
+        await answer(lines.join("\n"));
+        return true;
+      }
+      if (family === "default" && !everywhere) {
+        setChatModel(chat.chatId, undefined);
+        expireSession(chat.chatId);
+        await answer(`🧠 ${Here} kembali ikut model default, *${currentModel()}*, mulai pesan berikutnya.`);
+        return true;
+      }
+      if (!isFamily(family)) {
+        await answer(`Model "${family}" tidak ada.\n${options}`);
         return true;
       }
       try {
         const model = await latestModel(family);
-        if (model === currentModel()) {
-          await toAdmin(`🧠 Friday sudah memakai *${model}*.`);
+        if (model === (everywhere ? currentModel() : chatModel(chat.chatId))) {
+          await answer(`🧠 ${everywhere ? "Semua chat" : Here} sudah memakai *${model}*.`);
           return true;
         }
-        setModel(model);
-        expireChatSessions();
-        await toAdmin(`🧠 Semua chat sekarang memakai *${model}*, mulai pesan berikutnya. Tiap chat lanjut dari ringkasan singkat obrolan terakhir.`);
+        if (everywhere) {
+          setModel(model);
+          expireChatSessions();
+          await answer(`🧠 Semua chat sekarang memakai *${model}*, kecuali yang memilih modelnya sendiri, mulai pesan berikutnya. Tiap chat lanjut dari ringkasan singkat obrolan terakhir.`);
+        } else {
+          setChatModel(chat.chatId, model);
+          expireSession(chat.chatId);
+          await answer(`🧠 ${Here} sekarang memakai *${model}*, mulai pesan berikutnya. Obrolan lanjut dari ringkasan singkat. Kembali ke default dengan /switch default.`);
+        }
       } catch (err) {
-        await toAdmin(`⚠️ Model gagal diganti: ${err instanceof Error ? err.message : String(err)}`);
+        await answer(`⚠️ Model gagal diganti: ${err instanceof Error ? err.message : String(err)}`);
       }
       return true;
     }
@@ -406,7 +437,7 @@ async function toContent(msg: Incoming): Promise<BetaContentBlockParam[] | undef
   if (!msg.text && blocks.length === 0 && notes.length === 0) return undefined;
 
   let text = `[${nowStamp()}] ${msg.chat.sender.name}: ${msg.text}`.trimEnd();
-  if (msg.quoted) text += `\n(Replying to: "${msg.quoted.length > 1500 ? `${msg.quoted.slice(0, 1500)}…` : msg.quoted}")`;
+  if (msg.quoted) text += `\n(Replying to: "${msg.quoted.length > 1500 ? `${clip(msg.quoted, 1500)}…` : msg.quoted}")`;
   if (notes.length) text += `\n${notes.join("\n")}`;
   blocks.push({ type: "text", text });
   return blocks;

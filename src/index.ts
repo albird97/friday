@@ -2,10 +2,10 @@ import { handleIncoming, idle } from "./bot.js";
 import { config } from "./config.js";
 import { imageProvider, pruneImages } from "./images.js";
 import { hideSignalSessionDumps } from "./logging.js";
-import { currentModel, familyOf, latestModel, setModel } from "./model.js";
+import { chatModels, currentModel, familyOf, latestModel, setChatModel, setModel, type Family } from "./model.js";
 import { startReminderLoop } from "./reminders.js";
 import { startWeb } from "./web.js";
-import { expireChatSessions } from "./session.js";
+import { expireChatSessions, expireSession } from "./session.js";
 import { onUsageAlert } from "./usage.js";
 import { startWhatsApp } from "./whatsapp.js";
 
@@ -31,16 +31,32 @@ onUsageAlert(async (text) => {
   if (admin) await outbox.sendText(outbox.chatIdFor(admin.number), text);
 });
 
-/** Moves to a newer version of the current model family as soon as one comes out, and tells the admin. */
+/** Moves every chosen model family to its newer version as soon as one comes out, and tells the admin about the default. */
 async function followNewestModel(): Promise<void> {
+  const lookups = new Map<Family, Promise<string | undefined>>();
+  const newestFor = async (model: string) => {
+    const family = familyOf(model);
+    if (!family) return undefined;
+    if (!lookups.has(family)) {
+      const lookup = latestModel(family).catch((err) => {
+        console.warn(`Couldn't look up the newest ${family} model:`, err instanceof Error ? err.message : err);
+        return undefined;
+      });
+      lookups.set(family, lookup);
+    }
+    return lookups.get(family);
+  };
+
+  for (const own of chatModels()) {
+    const newest = await newestFor(own.model);
+    if (!newest || newest === own.model) continue;
+    setChatModel(own.chatId, newest);
+    expireSession(own.chatId);
+  }
+
   const model = currentModel();
-  const family = familyOf(model);
-  if (!family) return;
-  const newest = await latestModel(family).catch((err) => {
-    console.warn(`Couldn't look up the newest ${family} model:`, err instanceof Error ? err.message : err);
-    return model;
-  });
-  if (newest === model) return;
+  const newest = await newestFor(model);
+  if (!newest || newest === model) return;
   setModel(newest);
   expireChatSessions();
   console.log(`Model updated: ${model} -> ${newest}`);

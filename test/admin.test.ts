@@ -176,13 +176,13 @@ describe("secret admin commands", () => {
     assert.doesNotMatch(JSON.stringify(claude.requests.at(-1)!.body.system), /# Style/);
   });
 
-  it("/switch moves every chat to the newest version of a model family", async () => {
+  it("/switch semua moves every chat to the newest version of a model family", async () => {
     answer("Halo.");
     await handleIncoming(dm(ADMIN, "halo sebelum ganti"), outbox);
     assert.equal(claude.requests.at(-1)!.body.model, "claude-opus-5-5");
 
     sent = [] as Sent[];
-    await handleIncoming(inGroup(ADMIN, "/switch sonnet"), outbox);
+    await handleIncoming(inGroup(ADMIN, "/switch semua sonnet"), outbox);
     assert.equal(sent[0].chatId, private_(ADMIN.number));
     assert.match(sent[0].text!, /Semua chat sekarang memakai \*claude-sonnet-5-5\*/);
 
@@ -194,24 +194,80 @@ describe("secret admin commands", () => {
     assert.match(JSON.stringify(claude.requests.at(-2)!.body.system), /Earlier in this chat[\s\S]*halo sebelum ganti/, "a chat carries on from a recap");
 
     sent = [] as Sent[];
-    await handleIncoming(dm(ADMIN, "/switch"), outbox);
-    assert.match(sent[0].text!, /Model sekarang: \*claude-sonnet-5-5\*[\s\S]*Pilihan: opus, sonnet, haiku/);
-    await handleIncoming(dm(ADMIN, "/switch gemini"), outbox);
+    await handleIncoming(dm(ADMIN, "/switch semua"), outbox);
+    assert.match(sent[0].text!, /Model semua chat: \*claude-sonnet-5-5\*[\s\S]*Pilihan: opus, sonnet, haiku/);
+    await handleIncoming(dm(ADMIN, "/switch semua gemini"), outbox);
     assert.match(sent[1].text!, /tidak ada/);
-    await handleIncoming(dm(ADMIN, "/switch sonnet"), outbox);
+    await handleIncoming(dm(ADMIN, "/switch semua sonnet"), outbox);
     assert.match(sent[2].text!, /sudah memakai/);
     assert.equal(currentModel(), "claude-sonnet-5-5");
 
-    await handleIncoming(dm(ADMIN, "/switch haiku"), outbox);
+    await handleIncoming(dm(ADMIN, "/switch semua haiku"), outbox);
     assert.equal(currentModel(), "claude-haiku-5-5");
-    await handleIncoming(dm(ADMIN, "/switch opus"), outbox);
+    await handleIncoming(dm(ADMIN, "/switch semua opus"), outbox);
     assert.equal(currentModel(), "claude-opus-5-5");
   });
 
-  it("only the admin can switch models", async () => {
+  it("/switch in a group changes only that group, until /switch default", async () => {
+    const other = { ...inGroup(ADMIN, "Friday, halo"), chat: { ...inGroup(ADMIN, "").chat, chatId: "120363000000000002@g.us", chatName: "Keluarga" } };
+    sent = [] as Sent[];
+    await handleIncoming(inGroup(ADMIN, "/switch haiku"), outbox);
+    assert.equal(sent[0].chatId, private_(ADMIN.number), "the group sees nothing");
+    assert.match(sent[0].text!, /\*Kongkow\* sekarang memakai \*claude-haiku-5-5\*/);
+
+    for (const [incoming, model] of [[inGroup(ADMIN, "Friday, halo"), "claude-haiku-5-5"], [other, "claude-opus-5-5"], [dm(ADMIN, "halo"), "claude-opus-5-5"]] as const) {
+      answer("Halo.");
+      await handleIncoming(incoming, outbox);
+      assert.equal(claude.requests.at(-1)!.body.model, model);
+    }
+
+    await handleIncoming(inGroup(ADMIN, "/switch semua sonnet"), outbox);
+    answer("Halo.");
+    await handleIncoming(inGroup(ADMIN, "Friday, halo"), outbox);
+    assert.equal(claude.requests.at(-1)!.body.model, "claude-haiku-5-5", "its own choice outlasts a change for everyone");
+
+    sent = [] as Sent[];
+    await handleIncoming(inGroup(ADMIN, "/switch"), outbox);
+    assert.match(sent[0].text!, /Model di \*Kongkow\*: \*claude-haiku-5-5\*\nDefault semua chat: \*claude-sonnet-5-5\*/);
+    await handleIncoming(inGroup(ADMIN, "/switch default"), outbox);
+    assert.match(sent[1].text!, /kembali ikut model default, \*claude-sonnet-5-5\*/);
+    answer("Halo.");
+    await handleIncoming(inGroup(ADMIN, "Friday, halo"), outbox);
+    assert.equal(claude.requests.at(-1)!.body.model, "claude-sonnet-5-5");
+    await handleIncoming(dm(ADMIN, "/switch semua opus"), outbox);
+  });
+
+  it("people in SWITCH_USERS can switch their own private chat, and nowhere else", async () => {
+    const HANA = { name: "Hana", number: "6286666666666" };
+    sent = [] as Sent[];
+    await handleIncoming(dm(HANA, "/switch sonnet"), outbox);
+    assert.equal(sent[0].chatId, private_(HANA.number));
+    assert.match(sent[0].text!, /Chat ini sekarang memakai \*claude-sonnet-5-5\*/);
+    answer("Halo.");
+    await handleIncoming(dm(HANA, "halo"), outbox);
+    assert.equal(claude.requests.at(-1)!.body.model, "claude-sonnet-5-5");
+    answer("Halo.");
+    await handleIncoming(dm(ADMIN, "halo"), outbox);
+    assert.equal(claude.requests.at(-1)!.body.model, "claude-opus-5-5", "nobody else's chat changes");
+
+    sent = [] as Sent[];
+    await handleIncoming(dm(HANA, "/switch"), outbox);
+    assert.match(sent[0].text!, /Model di chat ini: \*claude-sonnet-5-5\*\nPilihan/, "no word about everyone else's default");
     answer("Hmm?");
-    await handleIncoming(dm({ name: "Gita", number: "6288888888888" }, "/switch haiku"), outbox);
-    assert.equal(currentModel(), "claude-opus-5-5");
+    await handleIncoming(dm(HANA, "/switch semua haiku"), outbox);
+    assert.equal(currentModel(), "claude-opus-5-5", "only the admin changes every chat");
+    answer("Hmm?");
+    await handleIncoming(inGroup(HANA, "/switch haiku"), outbox);
+    assert.equal(currentModel(GROUP), "claude-opus-5-5", "not in groups");
+    await handleIncoming(dm(HANA, "/switch default"), outbox);
+    assert.equal(currentModel(private_(HANA.number)), "claude-opus-5-5");
+  });
+
+  it("nobody else can switch models", async () => {
+    const gita = { name: "Gita", number: "6288888888888" };
+    answer("Hmm?");
+    await handleIncoming(dm(gita, "/switch haiku"), outbox);
+    assert.equal(currentModel(private_(gita.number)), "claude-opus-5-5");
     assert.equal(sent[0].text, "Hmm?");
   });
 

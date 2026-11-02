@@ -67,7 +67,7 @@ async function runTurn(session: Session, conv: Conversation): Promise<boolean> {
     client ??= new Anthropic({ maxRetries: 3 });
     const response = await client.beta.messages
       .stream({
-        model: currentModel(),
+        model: currentModel(conv.key),
         max_tokens: 32_000,
         betas: BETAS,
         fallbacks: "default",

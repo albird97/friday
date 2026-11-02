@@ -42,6 +42,8 @@ const Env = z.object({
   ONEHUB_API_TOKEN: z.string().default(""),
   // Errands: numbers that may have Friday message people outside the contacts (restaurants, shops…), private chats only.
   ERRAND_USERS: z.string().default(""),
+  // Numbers that may pick the Claude model of their own private chat with /switch. The admin always can, groups too.
+  SWITCH_USERS: z.string().default(""),
   // New errands per day across everyone — messaging strangers a lot gets a number flagged as spam.
   ERRAND_DAILY_LIMIT: z.coerce.number().int().min(0).default(10),
   // Access requests from the website answered per day. Each one is a reply to a stranger who wrote first.
@@ -84,6 +86,7 @@ export const config = {
   pairingNumber: env.PAIRING_NUMBER.replace(/\D/g, ""),
   onehubUsers: env.ONEHUB_USERS.split(",").map((n) => n.replace(/\D/g, "")).filter(Boolean),
   errandUsers: env.ERRAND_USERS.split(",").map((n) => n.replace(/\D/g, "")).filter(Boolean),
+  switchUsers: env.SWITCH_USERS.split(",").map((n) => n.replace(/\D/g, "")).filter(Boolean),
   authDir: path.join(env.DATA_DIR, "whatsapp-auth"),
   dbPath: path.join(env.DATA_DIR, "friday.db"),
   outboxDir: path.join(env.DATA_DIR, "outbox"),

@@ -1,6 +1,7 @@
 import type { BetaMessageParam } from "@anthropic-ai/sdk/resources/beta/messages/messages.js";
 import { config } from "./config.js";
 import { db } from "./db.js";
+import { clip, wellFormed } from "./format.js";
 
 /**
  * One conversation with Claude. The history is append-only while the session lives (Claude's thinking
@@ -18,7 +19,10 @@ type Row = { system: string; messages: string; tokens: number; updated_at: numbe
 
 export function loadSession(chatId: string): Session | undefined {
   const row = db.prepare("SELECT system, messages, tokens, updated_at FROM sessions WHERE chat_id = ?").get(chatId) as Row | undefined;
-  return row && { system: row.system, messages: JSON.parse(row.messages), tokens: row.tokens, updatedAt: row.updated_at };
+  if (!row) return undefined;
+  // Mends text cut mid-emoji, which would otherwise fail every turn in this chat until /reset.
+  const messages = JSON.parse(row.messages, (_key, value) => (typeof value === "string" ? wellFormed(value) : value));
+  return { system: wellFormed(row.system), messages, tokens: row.tokens, updatedAt: row.updated_at };
 }
 
 export function saveSession(chatId: string, s: Session): void {
@@ -57,7 +61,7 @@ export function recapOf(messages: BetaMessageParam[], maxEntries = 12, maxChars 
       .join("")
       .trim();
     if (!text) continue;
-    const clipped = text.length > maxChars ? `${text.slice(0, maxChars)}…` : text;
+    const clipped = text.length > maxChars ? `${clip(text, maxChars)}…` : text;
     lines.push(m.role === "user" ? clipped : `${config.BOT_NAME}: ${clipped}`);
   }
   return lines.slice(-maxEntries).join("\n");
