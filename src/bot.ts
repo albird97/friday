@@ -16,6 +16,7 @@ import { chatModel, currentModel, FAMILIES, isFamily, latestModel, setChatModel,
 import { confirmErrand, errandFor, errandIncoming, errandNotes } from "./errands.js";
 import { connectMessage, disconnect, googleAccount, googleAllowed, googleEnabled, youtubeMessage } from "./google.js";
 import { confirmGoogle, googleNotes } from "./googleapps.js";
+import { cancelLink, connectMessage as shopeeConnectMessage, disconnectShopee, shopeeAllowed, shopeeEnabled, shopeeShops } from "./shopee.js";
 import { connectMessage as spotifyConnectMessage, disconnectSpotify, share, sharesOf, spotifyAccount, spotifyAllowed, spotifyEnabled, unshare } from "./spotify.js";
 import { actionNotes, confirmAction } from "./onehub.js";
 import { EVERYWHERE, isPaused, parseDuration, pause, resume } from "./pause.js";
@@ -152,6 +153,7 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
           "/id — show this chat's id and your number",
           ...(googleEnabled ? ["/google — hubungkan akun Google milikmu (/google youtube untuk YouTube, /google putus untuk memutus)"] : []),
           ...(spotifyEnabled ? ["/spotify — hubungkan Spotify milikmu untuk membuat playlist (/spotify bareng <nama> untuk playlist bareng)"] : []),
+          ...(shopeeEnabled ? ["/shopee — hubungkan toko Shopee milikmu untuk menanyakan pesanan, pendapatan, stok, dan retur"] : []),
           ...(!admin && !chat.isGroup && config.switchUsers.includes(chat.sender.number) ? ["/switch opus | sonnet | haiku | default — pilih model Claude untuk chat ini"] : []),
           // The admin sees every command, the unlisted ones too, but only in their private chat.
           ...(admin && !chat.isGroup ? ["", ...ADMIN_HELP] : []),
@@ -254,6 +256,24 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
         await reply(`Spotify terhubung: ${account.name}\nKirim /spotify bareng <nama> untuk playlist bareng, atau /spotify putus untuk memutus.`);
       } else {
         await reply(spotifyConnectMessage(chat.sender.number, allContacts()[0]?.name ?? "admin"));
+      }
+      return true;
+    }
+    case "/shopee": {
+      if (!shopeeEnabled) return false;
+      if (!shopeeAllowed(chat)) {
+        await reply("Toko Shopee hanya bisa dihubungkan dan dipakai di chat pribadi dengan saya.");
+        return true;
+      }
+      const shops = shopeeShops(chat.sender.number);
+      const action = args[0]?.toLowerCase();
+      if (action === "putus") {
+        const gone = disconnectShopee(chat.sender.number, chat.chatId);
+        await reply(gone ? `✅ Toko Shopee diputus, dan riwayat chat ini dihapus dari server. Untuk mencabut izinnya dari sisi Shopee juga, buka link ini dan login dengan akun toko:\n${cancelLink()}` : "Belum ada toko Shopee yang terhubung.");
+      } else if (action === "tambah" || !shops.length) {
+        await reply(shopeeConnectMessage(chat.sender.number, allContacts()[0]?.name ?? "admin"));
+      } else {
+        await reply(`Toko Shopee terhubung: ${shops.map((s) => s.name).join(", ")}\nKirim /shopee tambah untuk menghubungkan toko lain, atau /shopee putus untuk memutus semuanya.`);
       }
       return true;
     }
@@ -409,6 +429,7 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
       if (result.removed) {
         await disconnect(result.removed.number, outbox.chatIdFor(result.removed.number));
         disconnectSpotify(result.removed.number, outbox.chatIdFor(result.removed.number));
+        disconnectShopee(result.removed.number, outbox.chatIdFor(result.removed.number));
         db.prepare("DELETE FROM spotify_shares WHERE partner = ?").run(result.removed.number);
       }
       await toAdmin(result.removed ? `Removed ${result.removed.name}.` : (result.error ?? "Couldn't remove that contact."));

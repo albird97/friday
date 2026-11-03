@@ -65,6 +65,12 @@ const Env = z.object({
   TUYA_REGION: z.enum(["", "cn", "us", "us-e", "eu", "eu-w", "in", "sg"]).default(""),
   // Numbers that may control those devices from their private chat. The admin always can.
   TUYA_USERS: z.string().default(""),
+  // Shopee: each contact links their own shop with /shopee, read-only. Partner ID and Key of Friday's own app at
+  // open.shopee.com (not onehub's); tokens are encrypted with GOOGLE_TOKEN_KEY. The sandbox is
+  // https://openplatform.sandbox.test-stable.shopee.sg. Empty = Shopee is off.
+  SHOPEE_PARTNER_ID: z.string().default(""),
+  SHOPEE_PARTNER_KEY: z.string().default(""),
+  SHOPEE_API_URL: z.string().default("https://partner.shopeemobile.com").transform((url) => url.replace(/\/+$/, "")),
   // Friday's public address, e.g. https://fridayai.my.id. Its pages (privacy policy, Google's redirect) listen on WEB_PORT.
   PUBLIC_URL: z.string().default("").transform((url) => url.replace(/\/+$/, "")),
   WEB_PORT: z.coerce.number().int().positive().default(3210),

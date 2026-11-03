@@ -194,6 +194,22 @@ db.exec(`
     created_at INTEGER NOT NULL,
     PRIMARY KEY (owner, partner)
   );
+  -- A person can link several shops; one shop can be linked by several people, each with their own tokens.
+  CREATE TABLE IF NOT EXISTS shopee_shops (
+    number         TEXT NOT NULL,
+    shop_id        TEXT NOT NULL,
+    name           TEXT NOT NULL,
+    access_token   TEXT NOT NULL,
+    access_expires INTEGER NOT NULL,
+    refresh_token  TEXT NOT NULL,
+    connected_at   INTEGER NOT NULL,
+    PRIMARY KEY (number, shop_id)
+  );
+  CREATE TABLE IF NOT EXISTS shopee_links (
+    state      TEXT PRIMARY KEY,
+    number     TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS chat_styles (
     chat_id     TEXT PRIMARY KEY,
     chat_name   TEXT NOT NULL,

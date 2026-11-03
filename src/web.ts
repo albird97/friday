@@ -2,6 +2,7 @@ import http from "node:http";
 import { config } from "./config.js";
 import { allContacts } from "./contacts.js";
 import { finishConnect } from "./google.js";
+import { finishConnect as finishShopee } from "./shopee.js";
 import { finishConnect as finishSpotify } from "./spotify.js";
 import type { Outbox } from "./types.js";
 
@@ -36,7 +37,7 @@ function homePage(): string {
   return page(
     bot,
     `<p>${bot} adalah asisten AI pribadi di WhatsApp untuk keluarga dan teman. ${bot} membantu menjawab pertanyaan, membuat pengingat, dan menyusun dokumen.</p>
-<p>Pengguna yang sudah mendapat akses bisa menghubungkan akun Google miliknya sendiri, agar ${bot} bisa membantu dengan Calendar, Tasks, Gmail, Drive, Docs, Sheets, Slides, Forms, Contacts, dan YouTube. Akun Spotify juga bisa dihubungkan untuk membuat playlist dari selera musiknya.</p>
+<p>Pengguna yang sudah mendapat akses bisa menghubungkan akun Google miliknya sendiri, agar ${bot} bisa membantu dengan Calendar, Tasks, Gmail, Drive, Docs, Sheets, Slides, Forms, Contacts, dan YouTube. Akun Spotify juga bisa dihubungkan untuk membuat playlist dari selera musiknya, dan toko Shopee untuk menanyakan pesanan, pendapatan, stok, dan retur.</p>
 <p><a href="/privacy">Kebijakan privasi</a></p>`,
   );
 }
@@ -65,6 +66,10 @@ function privacyPage(): string {
 <p>Hanya kalau kamu menghubungkan Spotify lewat /spotify, ${bot} bisa melihat artis dan lagu yang paling sering kamu putar, lagu yang kamu like, lagu yang baru kamu putar, dan playlist-mu, lalu membuat playlist pribadi atau menambah lagu ke playlist milikmu, saat kamu memintanya di chat pribadi.</p>
 <p>Seleramu hanya dipakai untuk orang lain kalau kamu mengizinkan orang itu dengan /spotify bareng &lt;nama&gt;. Orang itu lalu bisa membuat playlist bareng dari seleramu dan melihat artis dan lagu favoritmu. Cabut dengan /spotify stop &lt;nama&gt;.</p>
 
+<h2>Data Shopee yang diakses</h2>
+<p>Hanya kalau kamu menghubungkan toko Shopee lewat /shopee, ${bot} bisa membaca pesanan, pendapatan dan pencairan dana, produk beserta harga dan stoknya, serta permintaan retur di toko itu, saat kamu memintanya di chat pribadi. ${bot} tidak bisa mengubah apa pun di tokomu, dan tidak meminta nama atau alamat pembeli.</p>
+<p>Kirim /shopee putus untuk memutus toko, menghapus token, dan menghapus riwayat chat pribadimu di server. ${bot} lalu mengirim link untuk mencabut izinnya dari sisi Shopee juga.</p>
+
 <h2>Cara data dipakai</h2>
 <p>Data dipakai hanya untuk menjalankan permintaanmu. Setiap perubahan, seperti mengirim email atau mengubah acara, baru dijalankan setelah kamu mengonfirmasinya dengan kode. ${bot} tidak bekerja di grup untuk data Google.</p>
 <p>${bot} tidak menjual data, tidak memakainya untuk iklan atau penilaian kredit, dan tidak memakainya untuk melatih model AI umum.</p>
@@ -73,8 +78,8 @@ function privacyPage(): string {
 <p>Dengan persetujuanmu, isi yang dibaca ${bot} dikirim ke Anthropic (Claude) untuk diproses, karena fitur ini tidak bisa berjalan tanpa itu. Balasan dan pesanmu terkirim lewat WhatsApp. Data tidak dibagikan ke pihak lain, kecuali diwajibkan hukum.</p>
 
 <h2>Penyimpanan dan keamanan</h2>
-<p>Token akses Google disimpan terenkripsi di server ${bot}, dan koneksi memakai HTTPS. Isi yang dibaca ${bot} tersimpan di riwayat chat di server yang sama, dan bisa ikut masuk ke cadangan harian.</p>
-<p>${admin} mengelola server itu, jadi secara teknis punya jalur ke data tersebut. ${admin} tidak membaca data Google pengguna, kecuali kamu memintanya, atau diperlukan untuk keamanan, perbaikan penyalahgunaan, atau kewajiban hukum.</p>
+<p>Token akses Google, Spotify, dan Shopee disimpan terenkripsi di server ${bot}, dan koneksi memakai HTTPS. Isi yang dibaca ${bot} tersimpan di riwayat chat di server yang sama, dan bisa ikut masuk ke cadangan harian.</p>
+<p>${admin} mengelola server itu, jadi secara teknis punya jalur ke data tersebut. ${admin} tidak membaca data Google, Spotify, atau Shopee pengguna, kecuali kamu memintanya, atau diperlukan untuk keamanan, perbaikan penyalahgunaan, atau kewajiban hukum.</p>
 
 <h2>Memutus akses dan menghapus data</h2>
 <p>Kirim /spotify putus untuk memutus Spotify, mencabut semua izin playlist bareng, dan menghapus riwayat chat pribadimu di server. Cabut juga dari sisi Spotify di <a href="https://www.spotify.com/account/apps/">pengaturan akun Spotify</a>.</p>
@@ -100,6 +105,14 @@ export async function handleWeb(method: string, url: string, outbox: Outbox): Pr
   if (pathname === "/oauth/spotify/callback") {
     const result = await finishSpotify(searchParams.get("state") ?? "", searchParams.get("code") ?? undefined, outbox);
     return { status: result.ok ? 200 : 400, html: page(result.title, `<p>${escapeHtml(result.text)}</p>`) };
+  }
+  if (pathname.startsWith("/oauth/shopee/callback/")) {
+    const query = Object.fromEntries(["code", "shop_id", "main_account_id"].map((name) => [name, searchParams.get(name) ?? undefined]));
+    const result = await finishShopee(pathname.slice("/oauth/shopee/callback/".length), query, outbox);
+    return { status: result.ok ? 200 : 400, html: page(result.title, `<p>${escapeHtml(result.text)}</p>`) };
+  }
+  if (pathname === "/oauth/shopee/putus") {
+    return { status: 200, html: page("Akses Shopee dicabut", `<p>${escapeHtml(config.BOT_NAME)} tidak bisa lagi membaca tokomu. Kamu bisa menutup halaman ini.</p>`) };
   }
   return { status: 404, html: page("Halaman tidak ditemukan", "") };
 }

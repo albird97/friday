@@ -224,6 +224,27 @@ under User Management in the dashboard. The app's redirect URI is `https://<doma
 sudo /opt/friday/app/scripts/linux-service.sh spotify
 ```
 
+## Shopee shops
+
+Each contact links their own Shopee shop with `/shopee` (`/shopee tambah` for another shop, `/shopee putus` to end it,
+with a link to cancel on Shopee's side too). Then they ask in their private chat: "pesanan yang belum dikirim hari ini?",
+"uang masuk minggu ini berapa?", "stok kaos hitam tinggal berapa?", "ada retur bulan ini?". Friday only reads: orders,
+one order's income after fees, released income, products with price and stock per variation, and returns. It never
+writes to Shopee, and asks for no buyer names or addresses.
+
+This is Friday's own Shopee Open Platform app, not onehub's: a shop authorizing onehub's app would reach onehub's
+webhooks and back office. Shopee has no `state` parameter, so the redirect `https://<domain>/oauth/shopee/callback/<state>`
+carries it, and Shopee rotates the refresh token on every refresh, so both tokens live encrypted in `shopee_shops`.
+
+On open.shopee.com, create the app for serving many sellers (not "Seller In House System", which only takes your own
+shops), set the redirect domain to `https://<domain>`, and leave the PII declaration off. Then, on the server:
+
+```bash
+sudo /opt/friday/app/scripts/linux-service.sh shopee sandbox
+```
+
+Use `shopee` without `sandbox` once Shopee approves the app and gives the live partner ID and key.
+
 ## Market analysis
 
 Any contact can ask for technical analysis of Indonesian and US stocks, forex, gold, crypto, or anything Yahoo Finance
