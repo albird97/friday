@@ -15,6 +15,9 @@ type Call = { url: string; method: string; auth: string | null; body: string };
 let sent = [] as Sent[];
 let calls = [] as Call[];
 let registered = true;
+let limits = [] as number[]; // Retry-After seconds for the next searches, then searches succeed
+let inFlight = 0;
+let maxInFlight = 0;
 const uri = (n: number) => `spotify:track:${String(n).padStart(22, "a")}`;
 
 const outbox: Outbox = {
@@ -46,7 +49,15 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   if (url.endsWith("/v1/me")) return registered ? json({ id: `id-${auth}`, display_name: auth?.replace("Bearer access-", "") }) : json({ error: { message: "user may not be registered" } }, 403);
   if (url.includes("/me/top/artists")) return json({ items: [{ name: `Top artist of ${auth}` }] });
   if (url.includes("/me/top/tracks")) return json({ items: [track(`Top track of ${auth}`, 1)] });
-  if (url.includes("/search")) return json({ tracks: { items: [track(new URL(url).searchParams.get("q")!, 2)] } });
+  if (url.includes("/search")) {
+    const wait = limits.shift();
+    if (wait !== undefined) return new Response("{}", { status: 429, headers: { "Retry-After": String(wait) } });
+    inFlight++;
+    maxInFlight = Math.max(maxInFlight, inFlight);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    inFlight--;
+    return json({ tracks: { items: [track(new URL(url).searchParams.get("q")!, 2)] } });
+  }
   if (url.endsWith("/me/playlists") && init?.method === "POST") return json({ id: "p".repeat(22), external_urls: { spotify: "https://open.spotify.com/playlist/xyz" } }, 201);
   if (url.includes("/items")) return json({ snapshot_id: "s" }, 201);
   return json({});
@@ -68,6 +79,8 @@ beforeEach(() => {
   sent = [] as Sent[];
   calls = [] as Call[];
   registered = true;
+  limits = [];
+  maxInFlight = 0;
 });
 
 describe("linking Spotify", () => {
@@ -127,6 +140,37 @@ describe("playlists", () => {
     assert.deepEqual(calls.filter((c) => c.url.includes("/items")).map((c) => JSON.parse(c.body).uris.length), [100, 50]);
     const bad = await tool(chatOf(WIFE), "spotify_create_playlist", { name: "x", track_uris: ["https://evil.example"] });
     assert.equal(bad.isError, true);
+  });
+});
+
+describe("Spotify's rate limit", () => {
+  it("sends one request at a time, even from tool calls running together", async () => {
+    await connect(WIFE, "sarah");
+    const [a, b] = await Promise.all([tool(chatOf(WIFE), "spotify_search", { songs: ["A", "B", "C"] }), tool(chatOf(WIFE), "spotify_search", { songs: ["D", "E"] })]);
+    assert.equal(a.isError || b.isError, false);
+    assert.equal(maxInFlight, 1);
+  });
+
+  it("waits out a short limit, and keeps what it found when the limit is long", async () => {
+    await connect(WIFE, "sarah");
+    limits = [1];
+    const waited = await tool(chatOf(WIFE), "spotify_search", { songs: ["Fix You Coldplay"] });
+    assert.equal(waited.isError, false);
+    assert.match(waited.content, /spotify:track:/);
+
+    const songs = ["Satu", "Dua", "Tiga"];
+    const search = tool(chatOf(WIFE), "spotify_search", { songs });
+    await new Promise((resolve) => setTimeout(resolve, 300)); // after the first song went through
+    limits = [600];
+    const partial = await search;
+    assert.equal(partial.isError, false);
+    assert.match(partial.content, /"Satu":/);
+    assert.match(partial.content, /about 10 minute/);
+    assert.match(partial.content, /Not searched: (Dua; Tiga|Tiga)/);
+
+    limits = [600];
+    const none = await tool(chatOf(WIFE), "spotify_search", { songs: ["Empat"] });
+    assert.equal(none.isError, true);
   });
 });
 

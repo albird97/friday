@@ -188,16 +188,50 @@ async function accessToken(number: string, now = Date.now()): Promise<string> {
   }
 }
 
+// Development-mode apps get a small allowance per 30 seconds, shared by everyone using Friday. Requests go out one at a
+// time with a short gap, so a playlist's worth of searches doesn't use it up in a burst.
+const GAP_MS = 250;
+const MAX_WAIT_S = 10;
+let queue: Promise<unknown> = Promise.resolve();
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function inTurn<T>(task: () => Promise<T>): Promise<T> {
+  const run = queue.then(task);
+  queue = run.then(
+    () => sleep(GAP_MS),
+    () => sleep(GAP_MS),
+  );
+  return run;
+}
+
+export class SpotifyLimitError extends Error {
+  constructor(readonly seconds: number) {
+    super(`Spotify's limit for this app is used up. It opens again in about ${Math.ceil(seconds / 60)} minute(s); tell them to try then.`);
+  }
+}
+
 async function spotify<T = any>(number: string, path: string, req: { method?: string; query?: Record<string, string | number | undefined>; json?: unknown } = {}): Promise<T> {
   const query = Object.entries(req.query ?? {}).filter((entry): entry is [string, string | number] => entry[1] !== undefined);
   const url = `${API}${path}${query.length ? `?${new URLSearchParams(query.map(([k, v]) => [k, String(v)]))}` : ""}`;
-  const res = await fetch(url, {
-    method: req.method ?? "GET",
-    headers: { Authorization: `Bearer ${await accessToken(number)}`, ...(req.json !== undefined && { "Content-Type": "application/json" }) },
-    body: req.json === undefined ? undefined : JSON.stringify(req.json),
-    signal: AbortSignal.timeout(30_000),
+  const res = await inTurn(async () => {
+    const send = async () =>
+      fetch(url, {
+        method: req.method ?? "GET",
+        headers: { Authorization: `Bearer ${await accessToken(number)}`, ...(req.json !== undefined && { "Content-Type": "application/json" }) },
+        body: req.json === undefined ? undefined : JSON.stringify(req.json),
+        signal: AbortSignal.timeout(30_000),
+      });
+    const first = await send();
+    if (first.status !== 429) return first;
+    // A short wait is worth it; a long one means the allowance is gone for a while.
+    const seconds = Number(first.headers.get("Retry-After")) || 30;
+    console.warn(`Spotify rate limit: retry after ${seconds}s`);
+    if (seconds > MAX_WAIT_S) throw new SpotifyLimitError(seconds);
+    await sleep(seconds * 1000);
+    const again = await send();
+    if (again.status === 429) throw new SpotifyLimitError(Number(again.headers.get("Retry-After")) || 30);
+    return again;
   });
-  if (res.status === 429) throw new Error("Spotify's limit for this app is used up for now. Try again in a little while.");
   if (!res.ok) {
     const error = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
     throw new Error(`Spotify said: ${error.error?.message ?? `HTTP ${res.status}`}`);
@@ -271,18 +305,20 @@ const TOOLS = [
   }),
   tool({
     name: "spotify_search",
-    description: "Find the exact Spotify tracks for songs you picked. Give each as title plus artist. Returns up to 3 matches each, with the URI to use.",
+    description: "Find the exact Spotify tracks for songs you picked, all in one call (not several at once). Give each as title plus artist. Returns up to 3 matches each, with the URI to use.",
     schema: z.object({ songs: z.array(z.string().min(1)).min(1).max(40).describe('e.g. ["Fix You Coldplay", "Sial Mahalini"]') }),
     async run({ songs }, { chat }) {
       const results: string[] = [];
-      for (let i = 0; i < songs.length; i += 5) {
-        const batch = await Promise.all(
-          songs.slice(i, i + 5).map(async (song) => {
-            const { tracks } = await spotify<{ tracks: { items: Track[] } }>(chat.sender.number, "/search", { query: { q: song, type: "track", limit: 3 } });
-            return `"${song}":\n${tracks.items.map(describe).join("\n") || "- (not found)"}`;
-          }),
-        );
-        results.push(...batch);
+      for (const [i, song] of songs.entries()) {
+        try {
+          const { tracks } = await spotify<{ tracks: { items: Track[] } }>(chat.sender.number, "/search", { query: { q: song, type: "track", limit: 3 } });
+          results.push(`"${song}":\n${tracks.items.map(describe).join("\n") || "- (not found)"}`);
+        } catch (err) {
+          // Keep what was found: a playlist of those still beats nothing.
+          if (!(err instanceof SpotifyLimitError) || results.length === 0) throw err;
+          results.push(`${err.message}\nNot searched: ${songs.slice(i).join("; ")}`);
+          break;
+        }
       }
       return clip(results.join("\n\n"));
     },
