@@ -1,4 +1,5 @@
 import { googleTools, runGoogleTool } from "./googleapps.js";
+import { runSpotifyTool, spotifyTools } from "./spotify.js";
 import type { BetaToolUnion } from "@anthropic-ai/sdk/resources/beta/messages/messages.js";
 import { z } from "zod";
 import { findContact, isAdmin } from "./contacts.js";
@@ -444,7 +445,7 @@ export const toolParams: BetaToolUnion[] = [
  */
 export async function toolsFor(chat: ChatContext): Promise<BetaToolUnion[]> {
   const admin = isAdmin(chat.sender.number) ? ADMIN_TOOLS.filter((t) => imagesEnabled || t.name !== "set_profile_picture").map(toParam) : [];
-  const extra = [...admin, ...errandTools(chat), ...(await onehubTools(chat)), ...googleTools(chat)];
+  const extra = [...admin, ...errandTools(chat), ...(await onehubTools(chat)), ...googleTools(chat), ...spotifyTools(chat)];
   return extra.length ? [...toolParams, ...extra] : toolParams;
 }
 
@@ -453,7 +454,8 @@ export async function runTool(name: string, input: unknown, ctx: ToolContext): P
   try {
     if (!t) {
       const content =
-        (await runErrandTool(name, input, ctx.chat, ctx.outbox)) ?? (await runOnehubTool(name, input, ctx.chat, ctx.outbox)) ?? (await runGoogleTool(name, input, ctx.chat, ctx.outbox));
+        (await runErrandTool(name, input, ctx.chat, ctx.outbox)) ?? (await runOnehubTool(name, input, ctx.chat, ctx.outbox)) ?? (await runGoogleTool(name, input, ctx.chat, ctx.outbox)) ??
+        (await runSpotifyTool(name, input, ctx.chat, ctx.outbox));
       return content === undefined ? { content: `Unknown tool ${name}.`, isError: true } : { content, isError: false };
     }
     const parsed = t.schema.safeParse(input);

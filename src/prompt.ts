@@ -4,6 +4,7 @@ import { imagesEnabled } from "./images.js";
 import type { Memory } from "./memory.js";
 import { errandsAllowed } from "./errands.js";
 import { googleAccount, googleAllowed, googleEnabled } from "./google.js";
+import { spotifyAccount, spotifyAllowed } from "./spotify.js";
 import { onehubAllowed } from "./onehub.js";
 import { STYLES, styleOf } from "./styles.js";
 import type { BetaTextBlockParam } from "@anthropic-ai/sdk/resources/beta/messages/messages.js";
@@ -111,6 +112,23 @@ Google apps (Calendar, Gmail, Drive and others) work only after this person conn
 const GOOGLE_GROUP = `# Google
 Nobody's Google apps work in this group. If someone asks, say it works in a private chat with you.`;
 
+const SPOTIFY = (name: string) => `# Spotify (this person's own account, ${name})
+The spotify_* tools read this person's taste and make playlists in their own Spotify.
+- Spotify gives no recommendations, so you choose the songs. For "a playlist from what I like", read their taste first \
+(spotify_my_taste, and spotify_liked_songs or spotify_recently_played when it helps), then mix songs they already love \
+with similar ones they may not know, fitting the mood they asked for, unless they want only one kind.
+- Turn every pick into a track with spotify_search and put only URIs it returned in a playlist. Skip songs it can't find \
+rather than guessing a URI. About 20 to 30 songs unless they say otherwise.
+- Make or change a playlist only when they asked for it, then send the link. Playlists are private.
+- A joint playlist ("buat kita", with someone else): use spotify_partner_taste for that person. If it isn't allowed, \
+tell them the other person can send /spotify bareng <their name>. Use the partner's taste for the playlist; don't \
+recite their whole list.
+- Keep their listening data in this chat. Don't save it as a memory unless they ask.`;
+
+const SPOTIFY_OFFER = `# Spotify
+Playlists from someone's own taste work after they connect Spotify: they send /spotify in this private chat. Mention \
+that if they ask.`;
+
 const CHAT_SECTION = "\n\n# This chat\n";
 
 /**
@@ -156,6 +174,10 @@ kindly that questions about ${name}'s settings and privacy are best asked to ${a
     const account = googleAccount(chat.sender.number);
     sections.push(account ? GOOGLE(account.email) : GOOGLE_OFFER);
   } else if (googleEnabled && chat.isGroup) sections.push(GOOGLE_GROUP);
+  if (spotifyAllowed(chat)) {
+    const account = spotifyAccount(chat.sender.number);
+    sections.push(account ? SPOTIFY(account.name) : SPOTIFY_OFFER);
+  }
   if (memories.length) {
     sections.push(
       `# What you remember\n${memories.map((m) => `- #${m.id}${m.owner === "shared" ? " (shared)" : ""}: ${m.fact}`).join("\n")}`,

@@ -53,6 +53,10 @@ const Env = z.object({
   GOOGLE_CLIENT_ID: z.string().default(""),
   GOOGLE_CLIENT_SECRET: z.string().default(""),
   GOOGLE_TOKEN_KEY: z.string().default(""),
+  // Spotify: each contact links their own account with /spotify. From the app at developer.spotify.com; its tokens are
+  // encrypted with GOOGLE_TOKEN_KEY too. Empty = Spotify is off.
+  SPOTIFY_CLIENT_ID: z.string().default(""),
+  SPOTIFY_CLIENT_SECRET: z.string().default(""),
   // Friday's public address, e.g. https://fridayai.my.id. Its pages (privacy policy, Google's redirect) listen on WEB_PORT.
   PUBLIC_URL: z.string().default("").transform((url) => url.replace(/\/+$/, "")),
   WEB_PORT: z.coerce.number().int().positive().default(3210),

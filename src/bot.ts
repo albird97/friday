@@ -16,6 +16,7 @@ import { chatModel, currentModel, FAMILIES, isFamily, latestModel, setChatModel,
 import { confirmErrand, errandFor, errandIncoming, errandNotes } from "./errands.js";
 import { connectMessage, disconnect, googleAccount, googleAllowed, googleEnabled, youtubeMessage } from "./google.js";
 import { confirmGoogle, googleNotes } from "./googleapps.js";
+import { connectMessage as spotifyConnectMessage, disconnectSpotify, share, sharesOf, spotifyAccount, spotifyAllowed, spotifyEnabled, unshare } from "./spotify.js";
 import { actionNotes, confirmAction } from "./onehub.js";
 import { EVERYWHERE, isPaused, parseDuration, pause, resume } from "./pause.js";
 import { deleteSession, expireChatSessions, expireSession } from "./session.js";
@@ -150,6 +151,7 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
           "/reset — start a fresh conversation (keeps memories and reminders)",
           "/id — show this chat's id and your number",
           ...(googleEnabled ? ["/google — hubungkan akun Google milikmu (/google youtube untuk YouTube, /google putus untuk memutus)"] : []),
+          ...(spotifyEnabled ? ["/spotify — hubungkan Spotify milikmu untuk membuat playlist (/spotify bareng <nama> untuk playlist bareng)"] : []),
           ...(!admin && !chat.isGroup && config.switchUsers.includes(chat.sender.number) ? ["/switch opus | sonnet | haiku | default — pilih model Claude untuk chat ini"] : []),
           // The admin sees every command, the unlisted ones too, but only in their private chat.
           ...(admin && !chat.isGroup ? ["", ...ADMIN_HELP] : []),
@@ -218,6 +220,40 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
         await reply(`Akun Google terhubung: ${account.email}\nKirim /google youtube untuk menambah YouTube, atau /google putus untuk memutus semuanya.`);
       } else {
         await reply(connectMessage(chat.sender.number, allContacts()[0]?.name ?? "admin"));
+      }
+      return true;
+    }
+    case "/spotify": {
+      if (!spotifyEnabled) return false;
+      if (!spotifyAllowed(chat)) {
+        await reply("Spotify hanya bisa dihubungkan dan dipakai di chat pribadi dengan saya.");
+        return true;
+      }
+      const account = spotifyAccount(chat.sender.number);
+      const action = args[0]?.toLowerCase();
+      const who = args.slice(1).join(" ");
+      if (action === "putus") {
+        const gone = disconnectSpotify(chat.sender.number, chat.chatId);
+        await reply(gone ? "✅ Spotify diputus, izin playlist bareng dicabut, dan riwayat chat ini dihapus dari server. Untuk mencabut dari sisi Spotify juga: spotify.com/account/apps" : "Belum ada Spotify yang terhubung.");
+      } else if (action === "bareng" && who) {
+        await reply(await share(chat.sender, who, outbox));
+      } else if (action === "stop" && who) {
+        await reply(unshare(chat.sender.number, who));
+      } else if (action === "bareng" || action === "stop") {
+        const { given, received } = sharesOf(chat.sender.number);
+        await reply(
+          [
+            `Seleramu boleh dipakai: ${given.join(", ") || "belum ada"}`,
+            `Boleh kamu pakai: ${received.join(", ") || "belum ada"}`,
+            "",
+            "/spotify bareng <nama> — izinkan orang itu membuat playlist bareng dari seleramu",
+            "/spotify stop <nama> — cabut izinnya",
+          ].join("\n"),
+        );
+      } else if (account) {
+        await reply(`Spotify terhubung: ${account.name}\nKirim /spotify bareng <nama> untuk playlist bareng, atau /spotify putus untuk memutus.`);
+      } else {
+        await reply(spotifyConnectMessage(chat.sender.number, allContacts()[0]?.name ?? "admin"));
       }
       return true;
     }
@@ -370,7 +406,11 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
     case "/remove": {
       if (!admin) return false;
       const result = removeContact(args.join(" "));
-      if (result.removed) await disconnect(result.removed.number, outbox.chatIdFor(result.removed.number));
+      if (result.removed) {
+        await disconnect(result.removed.number, outbox.chatIdFor(result.removed.number));
+        disconnectSpotify(result.removed.number, outbox.chatIdFor(result.removed.number));
+        db.prepare("DELETE FROM spotify_shares WHERE partner = ?").run(result.removed.number);
+      }
       await toAdmin(result.removed ? `Removed ${result.removed.name}.` : (result.error ?? "Couldn't remove that contact."));
       return true;
     }

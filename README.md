@@ -191,6 +191,21 @@ sudo /opt/friday/app/scripts/linux-service.sh web fridayai.my.id
 sudo /opt/friday/app/scripts/linux-service.sh google fridayai.my.id
 ```
 
+## Spotify
+
+Each contact links their own Spotify with `/spotify`, and `/spotify putus` ends it. Friday reads their top artists and
+tracks, liked songs and recent plays, and makes private playlists in their account. Spotify gives new apps no
+recommendations, so Claude picks the songs and `spotify_search` turns each pick into a real track; playlists only get
+tracks search returned. For a joint playlist, a person allows someone with `/spotify bareng <name>` (and
+`/spotify stop <name>` takes it back); only then can that someone's Friday read their taste.
+
+Spotify's development mode needs the app owner to have Premium and allows 5 people, each added by their Spotify email
+under User Management in the dashboard. The app's redirect URI is `https://<domain>/oauth/spotify/callback`. Then:
+
+```bash
+sudo /opt/friday/app/scripts/linux-service.sh spotify
+```
+
 ## Market analysis
 
 Any contact can ask for technical analysis of Indonesian and US stocks, forex, gold, crypto, or anything Yahoo Finance

@@ -2,6 +2,7 @@ import http from "node:http";
 import { config } from "./config.js";
 import { allContacts } from "./contacts.js";
 import { finishConnect } from "./google.js";
+import { finishConnect as finishSpotify } from "./spotify.js";
 import type { Outbox } from "./types.js";
 
 // Friday's only public pages: what Google's sign-in needs. A home page, the privacy policy, and the address Google
@@ -35,7 +36,7 @@ function homePage(): string {
   return page(
     bot,
     `<p>${bot} adalah asisten AI pribadi di WhatsApp untuk keluarga dan teman. ${bot} membantu menjawab pertanyaan, membuat pengingat, dan menyusun dokumen.</p>
-<p>Pengguna yang sudah mendapat akses bisa menghubungkan akun Google miliknya sendiri, agar ${bot} bisa membantu dengan Calendar, Tasks, Gmail, Drive, Docs, Sheets, Slides, Forms, Contacts, dan YouTube.</p>
+<p>Pengguna yang sudah mendapat akses bisa menghubungkan akun Google miliknya sendiri, agar ${bot} bisa membantu dengan Calendar, Tasks, Gmail, Drive, Docs, Sheets, Slides, Forms, Contacts, dan YouTube. Akun Spotify juga bisa dihubungkan untuk membuat playlist dari selera musiknya.</p>
 <p><a href="/privacy">Kebijakan privasi</a></p>`,
   );
 }
@@ -60,6 +61,10 @@ function privacyPage(): string {
   <li>Alamat email akun Google, untuk menunjukkan akun mana yang terhubung.</li>
 </ul>
 
+<h2>Data Spotify yang diakses</h2>
+<p>Hanya kalau kamu menghubungkan Spotify lewat /spotify, ${bot} bisa melihat artis dan lagu yang paling sering kamu putar, lagu yang kamu like, lagu yang baru kamu putar, dan playlist-mu, lalu membuat playlist pribadi atau menambah lagu ke playlist milikmu, saat kamu memintanya di chat pribadi.</p>
+<p>Seleramu hanya dipakai untuk orang lain kalau kamu mengizinkan orang itu dengan /spotify bareng &lt;nama&gt;. Orang itu lalu bisa membuat playlist bareng dari seleramu dan melihat artis dan lagu favoritmu. Cabut dengan /spotify stop &lt;nama&gt;.</p>
+
 <h2>Cara data dipakai</h2>
 <p>Data dipakai hanya untuk menjalankan permintaanmu. Setiap perubahan, seperti mengirim email atau mengubah acara, baru dijalankan setelah kamu mengonfirmasinya dengan kode. ${bot} tidak bekerja di grup untuk data Google.</p>
 <p>${bot} tidak menjual data, tidak memakainya untuk iklan atau penilaian kredit, dan tidak memakainya untuk melatih model AI umum.</p>
@@ -72,6 +77,7 @@ function privacyPage(): string {
 <p>${admin} mengelola server itu, jadi secara teknis punya jalur ke data tersebut. ${admin} tidak membaca data Google pengguna, kecuali kamu memintanya, atau diperlukan untuk keamanan, perbaikan penyalahgunaan, atau kewajiban hukum.</p>
 
 <h2>Memutus akses dan menghapus data</h2>
+<p>Kirim /spotify putus untuk memutus Spotify, mencabut semua izin playlist bareng, dan menghapus riwayat chat pribadimu di server. Cabut juga dari sisi Spotify di <a href="https://www.spotify.com/account/apps/">pengaturan akun Spotify</a>.</p>
 <p>Kirim /google putus ke ${bot} untuk mencabut akses, menghapus token, dan menghapus riwayat chat pribadimu di server. Kamu juga bisa mencabut akses di <a href="https://myaccount.google.com/permissions">pengaturan akun Google</a>. Salinan di cadangan terhapus saat cadangan lama dibersihkan.</p>
 
 <h2>Kebijakan Google</h2>
@@ -89,6 +95,10 @@ export async function handleWeb(method: string, url: string, outbox: Outbox): Pr
   if (pathname === "/privacy") return { status: 200, html: privacyPage() };
   if (pathname === "/oauth/google/callback") {
     const result = await finishConnect(searchParams.get("state") ?? "", searchParams.get("code") ?? undefined, outbox);
+    return { status: result.ok ? 200 : 400, html: page(result.title, `<p>${escapeHtml(result.text)}</p>`) };
+  }
+  if (pathname === "/oauth/spotify/callback") {
+    const result = await finishSpotify(searchParams.get("state") ?? "", searchParams.get("code") ?? undefined, outbox);
     return { status: result.ok ? 200 : 400, html: page(result.title, `<p>${escapeHtml(result.text)}</p>`) };
   }
   return { status: 404, html: page("Halaman tidak ditemukan", "") };

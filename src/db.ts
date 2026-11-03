@@ -175,6 +175,25 @@ db.exec(`
     noted      INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS spotify_accounts (
+    number        TEXT PRIMARY KEY,
+    spotify_id    TEXT NOT NULL,
+    name          TEXT NOT NULL,
+    refresh_token TEXT NOT NULL,
+    connected_at  INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS spotify_links (
+    state      TEXT PRIMARY KEY,
+    number     TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  -- owner lets partner use owner's taste for joint playlists.
+  CREATE TABLE IF NOT EXISTS spotify_shares (
+    owner      TEXT NOT NULL,
+    partner    TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (owner, partner)
+  );
   CREATE TABLE IF NOT EXISTS chat_styles (
     chat_id     TEXT PRIMARY KEY,
     chat_name   TEXT NOT NULL,
