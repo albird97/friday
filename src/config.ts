@@ -57,6 +57,14 @@ const Env = z.object({
   // encrypted with GOOGLE_TOKEN_KEY too. Empty = Spotify is off.
   SPOTIFY_CLIENT_ID: z.string().default(""),
   SPOTIFY_CLIENT_SECRET: z.string().default(""),
+  // Smart Life (Tuya): the cloud project at platform.tuya.com that the Smart Life app account is linked to. Its Access
+  // ID and Secret, the linked account's UID (Devices → Link App Account), and the project's data center. Empty = off.
+  TUYA_ACCESS_ID: z.string().default(""),
+  TUYA_ACCESS_SECRET: z.string().default(""),
+  TUYA_UID: z.string().default(""),
+  TUYA_REGION: z.enum(["", "cn", "us", "us-e", "eu", "eu-w", "in", "sg"]).default(""),
+  // Numbers that may control those devices from their private chat. The admin always can.
+  TUYA_USERS: z.string().default(""),
   // Friday's public address, e.g. https://fridayai.my.id. Its pages (privacy policy, Google's redirect) listen on WEB_PORT.
   PUBLIC_URL: z.string().default("").transform((url) => url.replace(/\/+$/, "")),
   WEB_PORT: z.coerce.number().int().positive().default(3210),
@@ -90,6 +98,7 @@ export const config = {
   pairingNumber: env.PAIRING_NUMBER.replace(/\D/g, ""),
   onehubUsers: env.ONEHUB_USERS.split(",").map((n) => n.replace(/\D/g, "")).filter(Boolean),
   errandUsers: env.ERRAND_USERS.split(",").map((n) => n.replace(/\D/g, "")).filter(Boolean),
+  tuyaUsers: env.TUYA_USERS.split(",").map((n) => n.replace(/\D/g, "")).filter(Boolean),
   switchUsers: env.SWITCH_USERS.split(",").map((n) => n.replace(/\D/g, "")).filter(Boolean),
   authDir: path.join(env.DATA_DIR, "whatsapp-auth"),
   dbPath: path.join(env.DATA_DIR, "friday.db"),

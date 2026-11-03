@@ -163,6 +163,24 @@ only in their private chats (never in groups, where others read along).
   one, onehub computes a preview and Friday's code — not Claude — sends it with a one-time code. The action runs only
   when that person replies `YA 1234` within 10 minutes; the confirmation never goes through Claude.
 
+## Smart Life devices at home
+
+The admin (and the numbers in `TUYA_USERS`) can ask Friday in their private chat to check or switch the devices in the
+home's Smart Life account: "matikan lampu teras", "AC kamar 24 derajat", "lampu mana yang masih nyala?". Never in
+groups, where anyone could switch things in the house. Friday lists the devices, reads a device's controls and sends
+commands; locks, garage doors and gates are read-only, whatever Claude asks.
+
+Tuya's app SDK only runs inside a phone app, so Friday goes through Tuya's cloud API instead (free, but the trial of
+the IoT Core service has to be extended every few months in the console):
+
+1. On [platform.tuya.com](https://platform.tuya.com) create a **Cloud → Development** project ("Smart Home", and the
+   data center of your Smart Life account: in the app, **Me → Settings → Account and Security → Region**).
+2. In the project, **Devices → Link App Account → Add App Account**, and scan the QR code with the Smart Life app
+   (**Me → scan icon**). Copy the linked account's **UID** from that list.
+3. Make sure the **IoT Core** service is in the project's authorized services.
+4. Put the project's **Access ID** and **Access Secret**, the UID and the data center (`cn`, `us`, `us-e`, `eu`,
+   `eu-w`, `in` or `sg`) in `.env` as `TUYA_ACCESS_ID`, `TUYA_ACCESS_SECRET`, `TUYA_UID` and `TUYA_REGION`, then restart.
+
 ## Sharing with family and friends
 
 Add people with `/add` (or in `ALLOWED_CONTACTS`). `/add` also greets them on WhatsApp, in Indonesian, with what they can use and an example of each. Only the admin sees who else uses Friday: admin commands always answer in the admin's
