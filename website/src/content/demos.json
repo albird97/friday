@@ -100,8 +100,7 @@
     "chat": "Friday",
     "thread": [
       { "from": "me", "kind": "text", "text": "Reservasi meja 4 orang di Warung Sate Pak Budi, Sabtu jam 7 malam." },
-      { "from": "friday", "kind": "text", "text": "Nomornya saya temukan di Google Maps. Balas YA 1234 kalau boleh saya kirim pesannya." },
-      { "from": "me", "kind": "text", "text": "YA 1234" },
+      { "from": "friday", "kind": "text", "text": "Nomornya saya temukan di Google Maps, pesannya sudah saya kirim. Balasan mereka saya teruskan ke sini." },
       { "from": "friday", "kind": "text", "text": "📋 Beres! Meja untuk 4 orang, Sabtu jam 19.00, sudah dikonfirmasi." }
     ]
   },
@@ -112,7 +111,7 @@
       { "from": "me", "kind": "text", "text": "Besok aku ada acara apa?" },
       { "from": "friday", "kind": "text", "text": "Dari Calendar kamu: rapat tim jam 10.00 dan makan malam keluarga jam 19.00." },
       { "from": "me", "kind": "text", "text": "Tambahkan jemput anak jam 3 sore" },
-      { "from": "friday", "kind": "text", "text": "Tambah acara: Jemput anak, besok 15.00. Balas YA 1234 untuk lanjut." }
+      { "from": "friday", "kind": "text", "text": "✅ Acara dibuat: Jemput anak, besok 15.00." }
     ]
   },
   "friday-12": {

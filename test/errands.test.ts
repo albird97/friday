@@ -59,23 +59,15 @@ describe("errands", () => {
     for (const body of [wife, group]) assert.equal(toolNames(body).includes("start_errand"), false);
   });
 
-  it("runs a reservation end to end: confirm, send, reply, ask, answer, finish", async () => {
-    // 1. Albert asks; Claude proposes the errand. Nothing reaches the restaurant yet.
-    claude.replies.push({ content: [start("tu_1")], stop_reason: "tool_use" }, { content: [text("Cek dulu ya.")], stop_reason: "end_turn" });
+  it("runs a reservation end to end: send, reply, ask, answer, finish", async () => {
+    // 1. Albert asks; the first message goes out at once, and Albert is shown exactly what went where.
+    claude.replies.push({ content: [start("tu_1")], stop_reason: "tool_use" }, { content: [text("Sudah saya kirim.")], stop_reason: "end_turn" });
     await handleIncoming(dm(ADMIN, "tolong reservasi di Sate Senayan 085555555555 sabtu jam 7 buat 4 orang"), outbox);
-    const confirmation = to(ADMIN).find((t) => t?.startsWith("📤"))!;
-    assert.match(confirmation, /Kirim pesan ke Sate Senayan \(\+6285555555555\)\?\*\nNomor dari: Instagram @satesenayan \(bio\)\n/);
-    assert.match(confirmation, /Pesan pertama \(atas nama Albert\):\nHalo, saya Albert\./);
-    const code = /YA (\d{4})/.exec(confirmation)![1];
-    assert.deepEqual(to(RESTO), []);
-
-    // 2. Albert confirms: the first message goes out, without asking Claude.
-    sent = [];
-    const before = claude.requests.length;
-    await handleIncoming(dm(ADMIN, `YA ${code}`), outbox);
     assert.deepEqual(to(RESTO), ["Halo, saya Albert. Mau reservasi meja untuk 4 orang Sabtu 31 Okt jam 19.00, bisa?"]);
-    assert.match(to(ADMIN)[0]!, /^✅ Terkirim ke Sate Senayan/);
-    assert.equal(claude.requests.length, before);
+    const shown = to(ADMIN).find((t) => t?.startsWith("📤"))!;
+    assert.match(shown, /Terkirim ke Sate Senayan \(\+6285555555555\)\*\nNomor dari: Instagram @satesenayan \(bio\)\n/);
+    assert.match(shown, /Pesan pertama \(atas nama Albert\):\nHalo, saya Albert\./);
+    assert.ok(!/YA \d{4}/.test(shown), "no code to type");
 
     // 3. The restaurant answers; Friday replies within the brief, with a narrow tool set, mirrored to Albert.
     sent = [];
@@ -130,7 +122,7 @@ describe("errands", () => {
     assert.deepEqual(sent, []);
   });
 
-  it("refuses bad targets, enforces the daily limit, and expires unused codes", async () => {
+  it("refuses bad targets and enforces the daily limit", async () => {
     const attempt = async (input: Record<string, unknown>) => {
       claude.reset();
       claude.replies.push({ content: [start("tu_x", input)], stop_reason: "tool_use" }, { content: [text("ok")], stop_reason: "end_turn" });
@@ -145,12 +137,7 @@ describe("errands", () => {
     const second = await attempt({ to_number: "6286666666666" });
     assert.equal(second.is_error, undefined);
     assert.match((await attempt({ to_number: "6287777777777" })).content, /limit of 2 new errands a day/);
-
-    const code = (db.prepare("SELECT code FROM errands WHERE target_number = '6286666666666'").get() as { code: string }).code;
-    db.prepare("UPDATE errands SET created_at = ? WHERE target_number = '6286666666666'").run(Date.now() - 11 * 60_000);
-    sent = [];
-    await handleIncoming(dm(ADMIN, `YA ${code}`), outbox);
-    assert.match(to(ADMIN)[0]!, /kedaluwarsa/);
-    assert.deepEqual(to({ number: "6286666666666" }), []);
+    assert.deepEqual(to({ number: "6287777777777" }), [], "nothing goes out past the limit");
+    assert.equal(to({ number: "6286666666666" }).length, 1);
   });
 });

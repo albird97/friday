@@ -137,8 +137,8 @@ People listed in `ERRAND_USERS` can ask Friday, in their private chat, to deal w
 "book a table for 4 at Sate Senayan on Saturday at 7", "ask this shop if they have size 42":
 
 1. If they don't give a number, Friday looks it up (Google Maps listing, website, Instagram bio, Linktree…), checks
-   that it's on WhatsApp, and shows it with its source and the first message. Nothing is sent until they reply
-   `YA 1234`.
+   that it's on WhatsApp, and sends the first message straight away (no confirmation code). Friday's code then shows
+   them what went out, to which number, and where the number came from.
 2. Friday then answers the other side by itself **in their name**, written as them in the first person, within the
    brief: it shares only the details given, and anything else — a deposit, another time, a price — comes back as a
    "❓" question first. It doesn't volunteer that it's an assistant, but if the other side sincerely asks whether
@@ -158,9 +158,9 @@ only in their private chats (never in groups, where others read along).
 - **Looking things up** ("sales today?", "stock of ABC-12", "unshipped orders as Excel"): Friday writes SQL against
   onehub's database through a PostgreSQL role that can only `SELECT`, and never sees tables or columns that role isn't
   granted (credentials, payroll…). Queries are limited to one statement, 8 seconds and 200 rows.
-- **Doing things** (e.g. correcting stock): onehub's internal API lists the actions it allows. When Friday proposes
-  one, onehub computes a preview and Friday's code — not Claude — sends it with a one-time code. The action runs only
-  when that person replies `YA 1234` within 10 minutes; the confirmation never goes through Claude.
+- **Doing things** (e.g. correcting stock): onehub's internal API lists the actions it allows. When that person asks
+  for one, Friday has onehub compute its preview and then runs it straight away (no confirmation code); Friday's code,
+  not Claude, sends them onehub's result and summary.
 
 ## Sharing with family and friends
 
@@ -179,9 +179,9 @@ number with a fixed text (no Claude, no cost) and tells the admin, who decides w
 Each contact links their own Google account by sending `/google` in their private chat, and `/google putus` ends it.
 YouTube is a second step, `/google youtube`, because Google won't ask for it on the same screen as Drive files.
 Friday then works with that person's Calendar, Tasks, Gmail, Drive, Docs, Sheets, Slides, Forms, Contacts and YouTube,
-only in their private chat. The account is found from the sender's number, so nobody can reach someone else's. Reading
-runs straight away. Anything that changes something gets a preview and needs a `YA 1234` reply, checked by code rather
-than by Claude. Tokens are encrypted with `GOOGLE_TOKEN_KEY`.
+only in their private chat. The account is found from the sender's number, so nobody can reach someone else's.
+Everything runs straight away, without confirmation codes; after a change (an email sent, an event added) Friday's code
+sends them exactly what was done. Tokens are encrypted with `GOOGLE_TOKEN_KEY`.
 
 On the server, after pointing the domain's DNS at it and creating a Web OAuth client in the Google Cloud project:
 
@@ -215,14 +215,16 @@ Then, in that private chat only:
   60 kg 3x8"). Each exercise is matched against that member's own Hevy, and Friday asks when a name could be several.
   Someone whose sets are logged from another chat gets a private note. The host can invite more people, drop someone
   who isn't coming (which starts it for the rest) or cancel. "Selesai" saves each member's workout into their own Hevy
-  and sends them what was saved. If one can't be saved (a workout already at that time, or Hevy unreachable), that
-  member is told and can ask Friday to save it again within a day.
+  and sends them what was saved. If one can't be saved (Hevy unreachable, say), that
+  member is told and can ask Friday to save it again within a day. A workout at the same time already in their Hevy
+  gets the same warning as above.
 
 Everything runs straight away, without confirmation codes. After each change Friday sends a summary built by its
 code from what was saved (times in the person's timezone, every set, new exercises marked ✨, private or public), so
-a misread photo shows at once and can be fixed by asking. Because Hevy's API can't delete, Friday won't save a workout
-at the same time as one already in Hevy until the person says it's a different one, and asks whether a workout it
-didn't save should be public before editing it. New workouts are private unless the person asks otherwise.
+a misread photo shows at once and can be fixed by asking. Because Hevy's API can't delete, the summary warns when
+another workout is already in Hevy at the same time (one copy is then deleted in the app), and an edit of a workout
+whose privacy Hevy doesn't reveal makes it private and says so. New workouts are private unless the person asks
+otherwise.
 
 Hevy's public API can't delete anything, edit or remove custom exercises, or rename folders, and it never says
 whether an existing workout is private (Friday remembers what it set and says when it doesn't know). Those things

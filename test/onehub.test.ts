@@ -63,7 +63,6 @@ function inGroup(from: { name: string; number: string }, text: string): Incoming
 const text = (t: string) => ({ type: "text", text: t });
 const toolUse = (id: string, name: string, input: unknown) => ({ type: "tool_use", id, name, input });
 const toolNames = (body: any) => (body.tools as any[]).map((t) => t.name);
-const codeIn = (message: string | undefined) => /YA (\d{4})/.exec(message ?? "")?.[1];
 
 beforeEach(() => {
   claude.reset();
@@ -104,70 +103,36 @@ describe("onehub access", () => {
 });
 
 describe("onehub actions", () => {
-  it("previews, waits for the code, runs on YA <code>, and tells Claude afterwards", async () => {
+  it("runs the action at once with onehub's preview token, and tells the person what onehub did", async () => {
     claude.replies.push(
       { content: [toolUse("tu_1", "onehub_adjust_stock", { sku: "ABC-12", new_qty: 7 })], stop_reason: "tool_use" },
-      { content: [text("Sudah saya kirim preview-nya.")], stop_reason: "end_turn" },
+      { content: [text("Beres.")], stop_reason: "end_turn" },
     );
     await handleIncoming(dm(ADMIN, "stok ABC-12 jadi 7 ya"), outbox);
-
-    const confirmation = sent.find((s) => s.text?.includes("Konfirmasi onehub"));
-    assert.match(confirmation?.text ?? "", /Ubah stok ABC-12: 10 → 7/);
-    const code = codeIn(confirmation?.text);
-    assert.ok(code);
-    assert.equal(onehubCalls.some((c) => c.path.endsWith("/execute")), false);
-    const toolResult = claude.requests[1].body.messages.at(-1).content[0];
-    assert.match(toolResult.content, /Nothing has changed yet/);
-    assert.doesNotMatch(toolResult.content, new RegExp(code!));
-
-    sent = [];
-    const requestsBefore = claude.requests.length;
-    await handleIncoming(dm(ADMIN, `ya ${code}`), outbox);
     const execute = onehubCalls.find((c) => c.path === "/actions/adjust_stock/execute");
     assert.deepEqual(execute?.body, { params: { sku: "ABC-12", new_qty: 7 }, token: "state-abc", requested_by: { name: ADMIN.name, number: ADMIN.number } });
-    assert.deepEqual(sent, [{ chatId: chatOf(ADMIN), text: "✅ Stok ABC-12 sekarang 7." }]);
-    assert.equal(claude.requests.length, requestsBefore, "confirmations never reach Claude");
-
-    // The same code can't run twice; with nothing else waiting, the message is an ordinary one.
-    claude.replies.push({ content: [text("👍")], stop_reason: "end_turn" });
-    await handleIncoming(dm(ADMIN, `YA ${code}`), outbox);
-    assert.equal(onehubCalls.filter((c) => c.path.endsWith("/execute")).length, 1);
-    const next = claude.requests.at(-1)!.body.messages.at(-1).content;
-    assert.match(next[0].text, /System note.*adjust_stock.*done — Stok ABC-12 sekarang 7/s);
+    const done = sent.find((s) => s.text?.startsWith("✅"));
+    assert.equal(done?.text, "✅ Stok ABC-12 sekarang 7.\n\nUbah stok ABC-12: 10 → 7");
+    assert.ok(!sent.some((s) => /YA \d{4}/.test(s.text ?? "")), "no code to type");
+    const toolResult = claude.requests[1].body.messages.at(-1).content[0];
+    assert.match(toolResult.content, /onehub ran it: Stok ABC-12 sekarang 7\./);
   });
 
-  it("rejects wrong and expired codes, and reports onehub's refusals", async () => {
+  it("reports onehub's refusals to Claude", async () => {
+    executeFails = true;
     claude.replies.push(
       { content: [toolUse("tu_2", "onehub_adjust_stock", { sku: "XYZ-1", new_qty: 3 })], stop_reason: "tool_use" },
-      { content: [text("ok")], stop_reason: "end_turn" },
+      { content: [text("Tidak jalan.")], stop_reason: "end_turn" },
     );
     await handleIncoming(dm(ADMIN, "set XYZ-1 to 3"), outbox);
-    const code = codeIn(sent.find((s) => s.text?.includes("Konfirmasi"))?.text)!;
-    const wrong = code === "1000" ? "1001" : "1000";
-
-    sent = [];
-    await handleIncoming(dm(ADMIN, `YA ${wrong}`), outbox);
-    assert.match(sent[0].text!, /tidak cocok/);
-
-    executeFails = true;
-    sent = [];
-    await handleIncoming(dm(ADMIN, `YA ${code}`), outbox);
-    assert.equal(sent[0].text, "❌ onehub tidak menjalankan aksi itu: Stok sudah berubah sejak preview.");
-
-    claude.replies.push(
-      { content: [toolUse("tu_3", "onehub_adjust_stock", { sku: "XYZ-1", new_qty: 4 })], stop_reason: "tool_use" },
-      { content: [text("ok")], stop_reason: "end_turn" },
-    );
-    sent = [];
-    await handleIncoming(dm(ADMIN, "set XYZ-1 to 4"), outbox);
-    const late = codeIn(sent.find((s) => s.text?.includes("Konfirmasi"))?.text)!;
-    db.prepare("UPDATE pending_actions SET created_at = ? WHERE code = ? AND status = 'pending'").run(Date.now() - 11 * 60_000, late);
-    sent = [];
-    await handleIncoming(dm(ADMIN, `YA ${late}`), outbox);
-    assert.match(sent[0].text!, /kedaluwarsa/);
+    executeFails = false;
+    const result = claude.requests[1].body.messages.at(-1).content[0];
+    assert.equal(result.is_error, true);
+    assert.equal(result.content, "onehub didn't run it: Stok sudah berubah sejak preview.");
+    assert.ok(!sent.some((s) => s.text?.startsWith("✅")));
   });
 
-  it("passes onehub's validation errors back to Claude without asking for confirmation", async () => {
+  it("passes onehub's validation errors back to Claude without running anything", async () => {
     claude.replies.push(
       { content: [toolUse("tu_4", "onehub_adjust_stock", { sku: "NOPE", new_qty: 1 })], stop_reason: "tool_use" },
       { content: [text("SKU itu tidak ada.")], stop_reason: "end_turn" },
@@ -176,7 +141,7 @@ describe("onehub actions", () => {
     const result = claude.requests[1].body.messages.at(-1).content[0];
     assert.equal(result.is_error, true);
     assert.equal(result.content, "SKU NOPE tidak ditemukan.");
-    assert.equal(sent.some((s) => s.text?.includes("Konfirmasi")), false);
+    assert.equal(onehubCalls.some((c) => c.path.endsWith("/execute") && c.body.params.sku === "NOPE"), false);
   });
 
   it("leaves 'yes 2026' alone for people without onehub", async () => {

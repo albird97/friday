@@ -1,4 +1,3 @@
-import { randomInt } from "node:crypto";
 import type { BetaContentBlockParam, BetaToolUnion } from "@anthropic-ai/sdk/resources/beta/messages/messages.js";
 import { z } from "zod";
 import { converse } from "./agent.js";
@@ -10,8 +9,8 @@ import { nowStamp } from "./time.js";
 import type { ChatContext, Outbox } from "./types.js";
 
 // Errands: Friday messages someone who isn't a contact (a restaurant, a shop) for one of the people in ERRAND_USERS,
-// and handles their replies within a brief. The first message only goes out after that person confirms it with a
-// one-time code, checked here rather than by Claude. Each errand gets its own conversation with fewer tools — it can
+// and handles their replies within a brief. The first message goes out straight away, and the person is shown exactly
+// what was sent and to whom (by code, not Claude). Each errand gets its own conversation with fewer tools — it can
 // only reply to that one number, ask its principal, and finish — and everything said both ways is mirrored to the
 // principal's chat.
 
@@ -32,8 +31,6 @@ type Errand = {
   updated_at: number;
 };
 
-const CONFIRM_MINUTES = 10;
-const CONFIRM = /^\s*(?:ya|yes)\s+(\d{4})\s*[.!]?\s*$/i;
 const ACTIVE_DAYS = 3; // an active errand stops taking replies after this much silence
 const AFTER_DONE_DAYS = 2; // late messages ("see you Saturday!") still reach a finished errand for a while
 const MAX_TURNS = 30; // replies Friday handles per errand before handing it back to the person
@@ -70,7 +67,7 @@ export function errandFor(number: string, now = Date.now()): Errand | undefined 
     .get(number, now - ACTIVE_DAYS * 86_400_000, now - AFTER_DONE_DAYS * 86_400_000) as Errand | undefined;
 }
 
-// --- Starting and confirming -----------------------------------------------------------------------------------------
+// --- Starting --------------------------------------------------------------------------------------------------------
 
 async function startErrand(input: z.infer<typeof StartInput>, chat: ChatContext, outbox: Outbox): Promise<string> {
   const number = input.to_number.replace(/\D/g, "");
@@ -84,58 +81,30 @@ async function startErrand(input: z.infer<typeof StartInput>, chat: ChatContext,
   if (today.n >= config.ERRAND_DAILY_LIMIT) {
     throw new Error(`The limit of ${config.ERRAND_DAILY_LIMIT} new errands a day is reached (it protects the bot's number from being flagged as spam).`);
   }
-  // Numbers found online are often landlines; catch that before asking anyone to confirm.
+  // Numbers found online are often landlines; catch that before sending anything.
   if ((await outbox.isOnWhatsApp?.(number)) === false) {
     throw new Error(`+${number} isn't on WhatsApp (often a landline). Look for their WhatsApp number instead, e.g. on their Instagram bio, Linktree or Google Maps listing.`);
   }
 
-  const code = String(randomInt(1000, 10_000));
   const now = Date.now();
   const { lastInsertRowid } = db
     .prepare(
       `INSERT INTO errands (requester_number, requester_chat, requester_name, target_number, target_chat, target_name, goal,
          first_message, code, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', 'active', ?, ?)`,
     )
-    .run(chat.sender.number, chat.chatId, chat.sender.name, number, outbox.chatIdFor(number), input.to_name, input.goal, input.first_message, code, now, now);
-
-  // Sent by code, not by Claude, so the person confirms exactly what goes out and to whom.
+    .run(chat.sender.number, chat.chatId, chat.sender.name, number, outbox.chatIdFor(number), input.to_name, input.goal, input.first_message, now, now);
+  await outbox.sendText(outbox.chatIdFor(number), input.first_message);
+  // Sent by code, not by Claude, so the person sees exactly what went out and to whom.
   await outbox.sendText(
     chat.chatId,
-    `📤 *Kirim pesan ke ${input.to_name} (+${number})?*\n` +
+    `📤 *Terkirim ke ${input.to_name} (+${number})*\n` +
       (input.number_source ? `Nomor dari: ${input.number_source}\n` : "") +
       `Tujuan: ${input.goal}\n\nPesan pertama (atas nama ${chat.sender.name}):\n${input.first_message}\n\n` +
-      `Balas *YA ${code}* dalam ${CONFIRM_MINUTES} menit untuk mengirim. Setelah itu saya membalas pesan mereka atas nama ` +
-      `${chat.sender.name} sesuai tujuan ini, menanyakan hal di luar itu ke sini dulu, dan meneruskan semua percakapannya ke chat ini.`,
+      `Balasan mereka saya tangani atas nama ${chat.sender.name} sesuai tujuan ini, hal di luar itu saya tanyakan ke sini dulu, ` +
+      `dan semua percakapannya saya teruskan ke chat ini. Bilang ke saya kalau mau dihentikan.`,
   );
-  return (
-    `Errand #${lastInsertRowid} is waiting for the person's confirmation code; nothing has been sent yet. Don't repeat the ` +
-    "preview or the code, and don't say it's sent."
-  );
-}
-
-/**
- * Handles "YA 1234" for a pending errand. Returns true when the message was that confirmation (handled here, never
- * shown to Claude), false for everything else.
- */
-export async function confirmErrand(chat: ChatContext, text: string, outbox: Outbox): Promise<boolean> {
-  const match = errandsAllowed(chat) ? CONFIRM.exec(text) : null;
-  if (!match) return false;
-  const errand = db
-    .prepare("SELECT * FROM errands WHERE requester_chat = ? AND requester_number = ? AND code = ? AND status = 'pending'")
-    .get(chat.chatId, chat.sender.number, match[1]) as Errand | undefined;
-  if (!errand) return false;
-
-  if (Date.now() - errand.created_at > CONFIRM_MINUTES * 60_000) {
-    touch(errand.id, { status: "expired" });
-    await outbox.sendText(chat.chatId, "Kode konfirmasi itu sudah kedaluwarsa, jadi pesannya tidak dikirim. Minta ulang ke saya kalau masih perlu.");
-    return true;
-  }
-  await outbox.sendText(errand.target_chat, errand.first_message);
-  touch(errand.id, { status: "active" });
-  note(errand, `Errand ${label(errand)} was confirmed and the first message sent.`);
-  await outbox.sendText(chat.chatId, `✅ Terkirim ke ${errand.target_name}. Balasan mereka saya tangani dan teruskan ke sini.`);
-  return true;
+  return `Errand #${lastInsertRowid} started: the first message was sent and they were shown it, so don't repeat it. Their replies are handled within the goal and mirrored here.`;
 }
 
 // --- The errand's own conversation ----------------------------------------------------------------------------------
@@ -261,7 +230,7 @@ const MAIN_TOOLS = [
     name: "start_errand",
     description:
       "Message someone who isn't a contact (a restaurant, shop, clinic…) in the person's name and handle their replies " +
-      "within `goal`. The person must confirm with a code before anything is sent; afterwards every message both ways is " +
+      "within `goal`. The first message is sent at once, so only start one the person asked for; every message both ways is " +
       "mirrored to this chat. Numbers that aren't on WhatsApp are refused, so look for their WhatsApp number.",
     schema: StartInput,
   },

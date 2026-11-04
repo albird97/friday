@@ -1,4 +1,3 @@
-import { randomInt } from "node:crypto";
 import type { BetaToolUnion } from "@anthropic-ai/sdk/resources/beta/messages/messages.js";
 import pg from "pg";
 import { z } from "zod";
@@ -7,9 +6,8 @@ import { db } from "./db.js";
 import type { ChatContext, Outbox } from "./types.js";
 
 // onehub is the family business's back office. Friday can read its database through a read-only role, and run a
-// few actions through onehub's own internal API — but an action only runs after the person confirms onehub's preview
-// by replying with a one-time code, which this file checks (not Claude). Only the numbers in ONEHUB_USERS get any of
-// this, and only in private chats: in groups other people's messages are in the conversation and every reply is public.
+// few actions through onehub's own internal API, straight away; the person is sent onehub's own account of what it
+// did. Only the numbers in ONEHUB_USERS get any of this, and only in private chats: in groups other people's messages are in the conversation and every reply is public.
 
 export const onehubEnabled = config.onehubUsers.length > 0 && Boolean(config.ONEHUB_DATABASE_URL || config.ONEHUB_API_URL);
 
@@ -89,10 +87,6 @@ async function schema(tables: string[] | undefined): Promise<string> {
 // --- Actions -------------------------------------------------------------------------------------------------------
 
 type ActionInfo = { name: string; description: string; input_schema: { type: "object"; [key: string]: unknown } };
-type Pending = { id: number; action: string; params: string; token: string | null; status: string; created_at: number };
-
-const CONFIRM_MINUTES = 10;
-const CONFIRM = /^\s*(?:ya|yes)\s+(\d{4})\s*[.!]?\s*$/i;
 
 let actions: { list: ActionInfo[]; at: number } | undefined;
 
@@ -127,78 +121,20 @@ async function actionList(): Promise<ActionInfo[]> {
   return actions.list;
 }
 
-async function proposeAction(action: ActionInfo, params: unknown, chat: ChatContext, outbox: Outbox): Promise<string> {
+/** Runs an action: onehub works out what it will do (its preview), then does it, and the person is told both. */
+async function runAction(action: ActionInfo, params: unknown, chat: ChatContext, outbox: Outbox): Promise<string> {
   const requestedBy = { name: chat.sender.name, number: chat.sender.number };
   const preview = await api<{ summary: string; token?: string }>("POST", `/actions/${action.name}/preview`, { params, requested_by: requestedBy });
-  const code = String(randomInt(1000, 10_000));
-  db.prepare(
-    "INSERT INTO pending_actions (chat_id, number, code, action, params, token, summary, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-  ).run(chat.chatId, chat.sender.number, code, action.name, JSON.stringify(params), preview.token ?? null, preview.summary, Date.now());
-  // Sent by code, not by Claude, so what the person confirms is exactly what onehub will do.
-  await outbox.sendText(
-    chat.chatId,
-    `⚠️ *Konfirmasi onehub*\n${preview.summary}\n\nBalas *YA ${code}* dalam ${CONFIRM_MINUTES} menit untuk menjalankan. Abaikan pesan ini untuk membatalkan.`,
-  );
-  return (
-    "onehub's preview was sent to the person with a one-time confirmation code. Nothing has changed yet. Don't repeat " +
-    "the preview or the code, and don't say it's done: it only runs if they reply with the code, and they'll see the result."
-  );
-}
-
-/**
- * Handles "YA 1234" replies to a pending action. Returns true when the message was a confirmation (handled here,
- * never shown to Claude), false for everything else.
- */
-export async function confirmAction(chat: ChatContext, text: string, outbox: Outbox): Promise<boolean> {
-  const match = onehubAllowed(chat) ? CONFIRM.exec(text) : null;
-  if (!match) return false;
-  const reply = (message: string) => outbox.sendText(chat.chatId, message);
-
-  const pending = db
-    .prepare("SELECT id, action, params, token, status, created_at FROM pending_actions WHERE chat_id = ? AND number = ? AND code = ? ORDER BY id DESC LIMIT 1")
-    .get(chat.chatId, chat.sender.number, match[1]) as Pending | undefined;
-  if (!pending || pending.status !== "pending") {
-    const waiting = db
-      .prepare("SELECT 1 FROM pending_actions WHERE chat_id = ? AND status = 'pending' AND created_at > ?")
-      .get(chat.chatId, Date.now() - CONFIRM_MINUTES * 60_000);
-    if (!waiting) return false; // nothing awaits a code, so it's an ordinary message ("yes 2026")
-    await reply("Kode itu tidak cocok dengan aksi onehub yang menunggu konfirmasi.");
-    return true;
-  }
-  const finish = (status: string, result: string) =>
-    db.prepare("UPDATE pending_actions SET status = ?, result = ? WHERE id = ?").run(status, result, pending.id);
-  if (Date.now() - pending.created_at > CONFIRM_MINUTES * 60_000) {
-    finish("expired", "The confirmation code expired before it was used.");
-    await reply("Kode konfirmasi itu sudah kedaluwarsa. Minta ulang aksinya ke saya kalau masih perlu.");
-    return true;
-  }
-
-  finish("running", "");
+  let result: { message: string };
   try {
-    const result = await api<{ message: string }>("POST", `/actions/${pending.action}/execute`, {
-      params: JSON.parse(pending.params),
-      token: pending.token,
-      requested_by: { name: chat.sender.name, number: chat.sender.number },
-    });
-    finish("done", result.message);
-    await reply(`✅ ${result.message}`);
+    result = await api<{ message: string }>("POST", `/actions/${action.name}/execute`, { params, token: preview.token ?? null, requested_by: requestedBy });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    finish("failed", message);
-    await reply(`❌ onehub tidak menjalankan aksi itu: ${message}`);
+    throw new Error(`onehub didn't run it: ${message}`);
   }
-  return true;
-}
-
-/** What happened to actions Claude proposed in this chat since its last turn, so it knows on the next message. */
-export function actionNotes(chat: ChatContext): string | undefined {
-  const rows = db
-    .prepare("SELECT id, action, summary, status, result FROM pending_actions WHERE chat_id = ? AND noted = 0 AND status NOT IN ('pending', 'running')")
-    .all(chat.chatId) as { id: number; action: string; summary: string; status: string; result: string }[];
-  if (rows.length === 0) return undefined;
-  db.prepare(`UPDATE pending_actions SET noted = 1 WHERE id IN (${rows.map(() => "?").join(",")})`).run(...rows.map((r) => r.id));
-  const lines = rows.map((r) => `- ${r.action} ("${r.summary.split("\n")[0]}"): ${r.status}${r.result ? ` — ${r.result}` : ""}`);
-  return `[System note — onehub actions you proposed earlier:\n${lines.join("\n")}]`;
+  // Sent by code, not by Claude, so what the person reads is exactly what onehub did.
+  await outbox.sendText(chat.chatId, `✅ ${result.message}\n\n${preview.summary}`);
+  return `onehub ran it: ${result.message}\nThey were sent that with onehub's summary, so don't repeat it; answer in one short line at most.`;
 }
 
 // --- Tools ---------------------------------------------------------------------------------------------------------
@@ -240,7 +176,7 @@ export async function onehubTools(chat: ChatContext): Promise<BetaToolUnion[]> {
     : [];
   const act = (await actionList()).map((a) => ({
     name: `onehub_${a.name}`,
-    description: `${a.description}\n\nThis only proposes the action: onehub sends a preview and the person must confirm it with a code before anything changes.`,
+    description: `${a.description}\n\nThis runs at once in onehub, so only use it when this person asked for exactly this.`,
     input_schema: a.input_schema,
   }));
   return [...read, ...act];
@@ -254,7 +190,7 @@ export async function runOnehubTool(name: string, input: unknown, chat: ChatCont
   if (name === "onehub_schema") return schema(SchemaInput.parse(input).tables);
   const action = (await actionList()).find((a) => `onehub_${a.name}` === name);
   if (!action) throw new Error(`onehub has no action called ${name.slice("onehub_".length)}.`);
-  return proposeAction(action, input, chat, outbox);
+  return runAction(action, input, chat, outbox);
 }
 
 function formatRowsOf(result: pg.QueryArrayResult): string {

@@ -4,7 +4,7 @@ import { config, type Contact } from "./config.js";
 import { findContact, isAdmin } from "./contacts.js";
 import { db } from "./db.js";
 import { exerciseCatalog, findExercises, hevyAccount, hevyEnabled, normalizeTitle } from "./hevy.js";
-import { checkSet, newExercise, OverlapError, saveWorkout, setsText, workoutSet, type NewExercise, type SetInput } from "./hevyapps.js";
+import { checkSet, newExercise, saveWorkout, setsText, workoutSet, type NewExercise, type SetInput } from "./hevyapps.js";
 import { formatDateTime, fromLocal } from "./time.js";
 import type { ChatContext, Outbox } from "./types.js";
 
@@ -218,7 +218,7 @@ export async function answerGroupInvite(chat: ChatContext, text: string, outbox:
 // --- Finishing -----------------------------------------------------------------------------------------------------
 
 /** Saves one member's workout from the session into their own Hevy, and tells them. */
-async function saveFor(s: Session, m: Member, outbox: Outbox, evenIfOverlapping = false): Promise<string> {
+async function saveFor(s: Session, m: Member, outbox: Outbox): Promise<string> {
   if (m.saved) return `${m.name}: already in their Hevy`;
   const draft = draftOf(m);
   const chatId = outbox.chatIdFor(m.number);
@@ -234,17 +234,12 @@ async function saveFor(s: Session, m: Member, outbox: Outbox, evenIfOverlapping 
     end: new Date(Math.max(s.finished_at ?? Date.now(), start + 60_000)).toISOString(),
     description: others.length ? `Workout bareng ${others.join(", ")}` : undefined,
     exercises: draft.map((d) => ({ ...(d.exercise_template_id ? { exercise_template_id: d.exercise_template_id } : { new_exercise: d.new_exercise }), sets: d.sets })),
-    even_if_overlapping: evenIfOverlapping,
   };
   try {
     await saveWorkout({ number: m.number, chatId }, input, outbox, `🏁 *${s.title}* selesai!${others.length ? ` Workout bareng ${others.join(", ")}.` : ""}`);
     db.prepare("UPDATE group_workout_members SET saved = 1 WHERE workout_id = ? AND number = ?").run(s.id, m.number);
     return `${m.name}: saved in their Hevy`;
   } catch (err) {
-    if (err instanceof OverlapError) {
-      await outbox.sendText(chatId, `🏁 *${s.title}* selesai, tapi di Hevy-mu sudah ada *${err.title}* di jam yang sama, jadi tidak saya simpan supaya tidak dobel. Kalau itu workout lain, bilang "simpan workout bareng tadi".`);
-      return `${m.name}: not saved, their Hevy already has "${err.title}" at that time`;
-    }
     const reason = err instanceof Error ? err.message : String(err);
     await outbox.sendText(chatId, `🏁 *${s.title}* selesai, tapi workout-mu belum tersimpan ke Hevy (${reason}). Bilang "simpan workout bareng tadi" untuk mencoba lagi.`).catch(() => {});
     return `${m.name}: not saved (${reason})`;
@@ -401,18 +396,15 @@ const LIVE = [
     name: "group_workout_finish",
     description:
       "End the group workout for everyone: each member's workout is saved into their own Hevy and they're sent what was saved. " +
-      "Afterwards, a member whose workout didn't go in can call it again in their private chat to save theirs.",
-    schema: z.object({
-      end: z.string().optional().describe('Local end time if not now, "2026-11-04T19:30".'),
-      even_if_overlapping: z.boolean().optional().describe("Only when saving one member's again, after they said it's a different workout from the one already in their Hevy."),
-    }),
-    async run({ end, even_if_overlapping }, { chat, outbox }) {
+      "Afterwards, a member whose workout didn't go in (Hevy unreachable) can call it again in their private chat to save theirs.",
+    schema: z.object({ end: z.string().optional().describe('Local end time if not now, "2026-11-04T19:30".') }),
+    async run({ end }, { chat, outbox }) {
       const s = sessionHere(chat);
       if (!s) {
         const past = !chat.isGroup && recentlyFinished(chat.sender.number);
         if (!past) throw new Error("They aren't in a group workout.");
         const me = membersOf(past.id).find((m) => m.number === chat.sender.number)!;
-        return `${await saveFor(past, me, outbox, even_if_overlapping)}.`;
+        return `${await saveFor(past, me, outbox)}.`;
       }
       if (s.status !== "active") throw new Error(`It hasn't started: waiting for ${names(membersOf(s.id).filter((m) => m.status === "invited"))}. Remove them, or cancel.`);
       const finishedAt = Math.min(end ? fromLocal(end).getTime() : Date.now(), Date.now());

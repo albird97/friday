@@ -102,7 +102,7 @@ export function connectMessage(number: string, adminName: string): string {
       "*Sebelum setuju, perlu kamu tahu:*",
       `- Isi yang dibaca ${config.BOT_NAME} dikirim ke Claude (Anthropic) untuk diproses.`,
       `- Isinya tersimpan sementara di riwayat chat, di server yang dikelola ${adminName}.`,
-      "- Setiap perubahan, seperti kirim email atau ubah acara, harus kamu konfirmasi dengan kode.",
+      `- Yang kamu minta, seperti kirim email atau ubah acara, langsung dijalankan, dan ${config.BOT_NAME} mengirim apa yang dilakukan.`,
       "- Kamu bisa memutus akses kapan saja dengan /google putus.",
     ].join("\n"),
     `Kebijakan privasi: ${config.PUBLIC_URL}/privacy`,
@@ -181,7 +181,6 @@ export async function disconnect(number: string, chatId: string): Promise<boolea
   tokens.delete(tokenKey(number, "youtube"));
   if (!row && !youtube) return false;
   db.prepare("DELETE FROM sessions WHERE chat_id = ?").run(chatId);
-  db.prepare("DELETE FROM google_pending WHERE number = ?").run(number);
   for (const { refresh_token } of [row, youtube].filter((r) => r !== undefined)) {
     await fetch(REVOKE_URL, {
       method: "POST",

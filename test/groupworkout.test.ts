@@ -202,21 +202,16 @@ describe("finishing a group workout", () => {
     assert.match(lastTo(BUDI), /Tidak ada set yang tercatat untukmu/);
   });
 
-  it("doesn't save a second copy for someone who also logged it in the app, unless they say so", async () => {
+  it("still saves for someone who also logged it in the app, and warns them about the copy", async () => {
     await everyoneIn();
     await tool(gym(ADMIN), "group_workout_log", { member: "Sarah", exercises: [bench(40)] });
     hevyFake.accounts[KEYS.sarah].workouts.push({ id: "app", title: "Leg (app)", start_time: new Date(Date.now() - 60_000).toISOString(), end_time: new Date(Date.now() + 60_000).toISOString(), exercises: [] });
     const r = await tool(gym(ADMIN), "group_workout_finish", {});
-    assert.match(r.content, /Sarah: not saved, their Hevy already has "Leg \(app\)"/);
-    assert.match(lastTo(WIFE), /sudah ada \*Leg \(app\)\* di jam yang sama/);
-    assert.equal(posted(KEYS.sarah).length, 0);
-
-    assert.ok(toolNames(dm(WIFE)).includes("group_workout_finish"));
-    const again = await tool(dm(WIFE), "group_workout_finish", { even_if_overlapping: true });
-    assert.match(again.content, /Sarah: saved in their Hevy/);
+    assert.match(r.content, /Sarah: saved in their Hevy/);
     assert.equal(posted(KEYS.sarah).length, 1);
-    const twice = await tool(dm(WIFE), "group_workout_finish", { even_if_overlapping: true });
-    assert.match(twice.content, /already in their Hevy/);
+    assert.match(lastTo(WIFE), /⚠️ Di Hevy-mu juga ada \*Leg \(app\)\* di jam yang sama/);
+    const again = await tool(dm(WIFE), "group_workout_finish", {});
+    assert.match(again.content, /already in their Hevy/);
     assert.equal(posted(KEYS.sarah).length, 1, "never saved twice");
   });
 

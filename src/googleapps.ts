@@ -1,19 +1,15 @@
-import { randomBytes, randomInt } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import type { BetaToolUnion } from "@anthropic-ai/sdk/resources/beta/messages/messages.js";
 import { z } from "zod";
 import { config } from "./config.js";
-import { db } from "./db.js";
 import { google, googleAccount, googleAllowed, SCOPES, type Scope } from "./google.js";
 import { loadImage } from "./images.js";
 import type { ChatContext, Outbox } from "./types.js";
 
-// What Friday can do in someone's own Google apps. Reading runs straight away. A tool with a `preview` changes
-// something, so it only proposes: the person gets a preview built here from the real input (not Claude's words) and
-// must answer with a one-time code, which this file checks. Mail and files can carry hidden instructions, and this
-// keeps them from sending or changing anything on their own.
+// What Friday can do in someone's own Google apps. Everything runs straight away, without a confirmation code. A tool
+// with a `preview` changes something: once it ran, the person is sent what was done, built here from the real input
+// (not Claude's words), so they can see at once if mail or a file talked Claude into something they didn't ask for.
 
-const CONFIRM_MINUTES = 10;
-const CONFIRM = /^\s*(?:ya|yes)\s+(\d{4})\s*[.!]?\s*$/i;
 const MAX_CHARS = 20_000;
 
 const CALENDAR = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
@@ -35,7 +31,7 @@ type App<S extends z.ZodObject = z.ZodObject> = {
   description: string;
   scope: Scope;
   schema: S;
-  /** Present on tools that change something. The lines shown to the person before they confirm. */
+  /** Present on tools that change something. What was done, sent to the person after it ran. */
   preview?: (input: z.infer<S>) => string;
   run: (input: z.infer<S>, ctx: Context) => Promise<string>;
 };
@@ -91,7 +87,7 @@ const CALENDAR_TOOLS = [
   }),
   app({
     name: "google_calendar_add",
-    description: "Propose a new event on this person's calendar, with an optional Google Meet link.",
+    description: "Add a new event on this person's calendar, with an optional Google Meet link.",
     scope: SCOPES.calendar,
     schema: z.object({ ...eventFields, meet: z.boolean().optional().describe("Add a Google Meet link.") }),
     preview: (i) => [`Tambah acara: *${line(i.title)}*`, `${i.start} s/d ${i.end}`, i.location && `Lokasi: ${line(i.location)}`, i.attendees?.length && `Undang: ${i.attendees.join(", ")}`, i.meet && "Dengan link Google Meet"].filter(Boolean).join("\n"),
@@ -107,7 +103,7 @@ const CALENDAR_TOOLS = [
   }),
   app({
     name: "google_calendar_change",
-    description: "Propose changing an event (get its id from google_calendar_events). Only pass what changes.",
+    description: "Change an event (get its id from google_calendar_events). Only pass what changes.",
     scope: SCOPES.calendar,
     schema: z.object({ event_id: z.string(), ...z.object(eventFields).partial().shape }),
     preview: (i) => [`Ubah acara ${i.event_id}`, i.title && `Judul: ${line(i.title)}`, i.start && `Mulai: ${i.start}`, i.end && `Selesai: ${i.end}`, i.location && `Lokasi: ${line(i.location)}`, i.attendees?.length && `Undang: ${i.attendees.join(", ")}`].filter(Boolean).join("\n"),
@@ -118,7 +114,7 @@ const CALENDAR_TOOLS = [
   }),
   app({
     name: "google_calendar_delete",
-    description: "Propose deleting an event.",
+    description: "Delete an event.",
     scope: SCOPES.calendar,
     schema: z.object({ event_id: z.string(), title: z.string().describe("The event's title, shown to the person.") }),
     preview: (i) => `Hapus acara: *${line(i.title)}* (${i.event_id})`,
@@ -144,7 +140,7 @@ const TASK_TOOLS = [
   }),
   app({
     name: "google_tasks_add",
-    description: "Propose adding a task.",
+    description: "Add a task.",
     scope: SCOPES.tasks,
     schema: z.object({ title: z.string().min(1), notes: z.string().optional(), due: z.string().optional().describe('A date, "2026-11-03".') }),
     preview: (i) => [`Tambah tugas: *${line(i.title)}*`, i.due && `Tenggat: ${i.due}`].filter(Boolean).join("\n"),
@@ -155,7 +151,7 @@ const TASK_TOOLS = [
   }),
   app({
     name: "google_tasks_done",
-    description: "Propose marking a task as done.",
+    description: "Mark a task as done.",
     scope: SCOPES.tasks,
     schema: z.object({ task_id: z.string(), title: z.string() }),
     preview: (i) => `Tandai selesai: *${line(i.title)}*`,
@@ -235,7 +231,7 @@ const DRIVE_TOOLS = [
   }),
   app({
     name: "google_drive_save_photo",
-    description: 'Propose saving a photo from this chat to Drive, using its image number (photos appear as "[image #12]").',
+    description: 'Save a photo from this chat to Drive, using its image number (photos appear as "[image #12]").',
     scope: SCOPES.driveFile,
     schema: z.object({ image_number: z.number().int(), file_name: z.string().min(1) }),
     preview: (i) => `Simpan foto #${i.image_number} ke Drive sebagai *${line(i.file_name)}*`,
@@ -248,7 +244,7 @@ const DRIVE_TOOLS = [
   }),
   app({
     name: "google_docs_create",
-    description: "Propose creating a Google Doc from plain text.",
+    description: "Create a Google Doc from plain text.",
     scope: SCOPES.driveFile,
     schema: z.object({ title: z.string().min(1), text: z.string().min(1) }),
     preview: (i) => `Buat Google Doc: *${line(i.title)}*\n${i.text.length} karakter`,
@@ -259,7 +255,7 @@ const DRIVE_TOOLS = [
   }),
   app({
     name: "google_docs_append",
-    description: "Propose adding text to the end of an existing Google Doc.",
+    description: "Add text to the end of an existing Google Doc.",
     scope: SCOPES.docs,
     schema: z.object({ document_id: z.string(), document_name: z.string(), text: z.string().min(1) }),
     preview: (i) => `Tambah teks ke *${line(i.document_name)}*:\n${i.text.slice(0, 300)}`,
@@ -273,7 +269,7 @@ const DRIVE_TOOLS = [
   }),
   app({
     name: "google_sheets_create",
-    description: "Propose creating a Google Sheet with rows of values. The first row is usually headers.",
+    description: "Create a Google Sheet with rows of values. The first row is usually headers.",
     scope: SCOPES.sheets,
     schema: z.object({ title: z.string().min(1), rows: z.array(z.array(z.union([z.string(), z.number()]))).min(1) }),
     preview: (i) => `Buat Google Sheet: *${line(i.title)}*\n${i.rows.length} baris`,
@@ -296,7 +292,7 @@ const DRIVE_TOOLS = [
   }),
   app({
     name: "google_sheets_add_rows",
-    description: "Propose adding rows after the last row of a Google Sheet.",
+    description: "Add rows after the last row of a Google Sheet.",
     scope: SCOPES.sheets,
     schema: z.object({ spreadsheet_id: z.string(), sheet_name: z.string().describe("The tab, e.g. Sheet1."), rows: z.array(z.array(z.union([z.string(), z.number()]))).min(1) }),
     preview: (i) => `Tambah ${i.rows.length} baris ke *${line(i.sheet_name)}*:\n${i.rows.slice(0, 5).map((r) => r.join(" | ")).join("\n")}`,
@@ -307,7 +303,7 @@ const DRIVE_TOOLS = [
   }),
   app({
     name: "google_slides_create",
-    description: "Propose creating a Google Slides deck: each slide has a title and body text.",
+    description: "Create a Google Slides deck: each slide has a title and body text.",
     scope: SCOPES.slides,
     schema: z.object({ title: z.string().min(1), slides: z.array(z.object({ title: z.string(), body: z.string() })).min(1).max(30) }),
     preview: (i) => `Buat Google Slides: *${line(i.title)}*\n${i.slides.length} slide`,
@@ -329,7 +325,7 @@ const DRIVE_TOOLS = [
 const FORM_TOOLS = [
   app({
     name: "google_forms_create",
-    description: "Propose creating a Google Form, for sign-ups or surveys. Returns the link to share.",
+    description: "Create a Google Form, for sign-ups or surveys. Returns the link to share.",
     scope: SCOPES.forms,
     schema: z.object({
       title: z.string().min(1),
@@ -437,7 +433,7 @@ const GMAIL_TOOLS = [
   }),
   app({
     name: "google_gmail_draft",
-    description: "Propose saving an email as a draft in Gmail, for the person to review and send themselves.",
+    description: "Save an email as a draft in Gmail, for the person to review and send themselves.",
     scope: SCOPES.gmailCompose,
     schema: z.object(mailFields),
     preview: mailPreview("Simpan draf email"),
@@ -449,7 +445,7 @@ const GMAIL_TOOLS = [
   }),
   app({
     name: "google_gmail_send",
-    description: "Propose sending an email from this person's Gmail, only when they asked to send it.",
+    description: "Send an email from this person's Gmail, only when they asked to send it.",
     scope: SCOPES.gmailSend,
     schema: z.object(mailFields),
     preview: mailPreview("Kirim email"),
@@ -509,69 +505,9 @@ export async function runGoogleTool(name: string, input: unknown, chat: ChatCont
   if (!tool) throw new Error(`No Google tool called ${name}.`);
   const parsed = tool.schema.parse(input);
   if (!googleAccount(chat.sender.number)?.scopes.includes(tool.scope)) throw new Error(tool.scope === SCOPES.youtube ? "YouTube isn't connected. Ask them to send /google youtube." : "This person didn't allow that Google app. They can send /google to connect again.");
-  if (tool.preview) return propose(tool, parsed, chat, outbox);
-  return tool.run(parsed, { number: chat.sender.number, chatId: chat.chatId });
-}
-
-// --- Confirming changes --------------------------------------------------------------------------------------------
-
-async function propose(tool: App, input: unknown, chat: ChatContext, outbox: Outbox): Promise<string> {
-  const code = String(randomInt(1000, 10_000));
-  const summary = tool.preview!(input as never);
-  db.prepare("INSERT INTO google_pending (chat_id, number, code, tool, input, summary, status, noted, created_at) VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?)").run(
-    chat.chatId,
-    chat.sender.number,
-    code,
-    tool.name,
-    JSON.stringify(input),
-    summary,
-    Date.now(),
-  );
-  await outbox.sendText(chat.chatId, `⚠️ *Konfirmasi Google*\n${summary}\n\nBalas *YA ${code}* dalam ${CONFIRM_MINUTES} menit untuk menjalankan. Abaikan pesan ini untuk membatalkan.`);
-  return "Nothing has changed yet. The person was sent a preview and a code; it runs only when they reply with that code. Don't repeat the preview or the code, and don't say it's done.";
-}
-
-type Pending = { id: number; tool: string; input: string; created_at: number };
-
-/**
- * Handles "YA 1234" for a pending Google change. Returns true when the message was that confirmation (handled here,
- * never shown to Claude), false for everything else.
- */
-export async function confirmGoogle(chat: ChatContext, text: string, outbox: Outbox): Promise<boolean> {
-  const match = googleAllowed(chat) ? CONFIRM.exec(text) : null;
-  if (!match) return false;
-  const pending = db
-    .prepare("SELECT id, tool, input, created_at FROM google_pending WHERE chat_id = ? AND number = ? AND code = ? AND status = 'pending' ORDER BY id DESC LIMIT 1")
-    .get(chat.chatId, chat.sender.number, match[1]) as Pending | undefined;
-  if (!pending) return false;
-  const finish = (status: string, result: string) => db.prepare("UPDATE google_pending SET status = ?, result = ? WHERE id = ?").run(status, result, pending.id);
-  if (Date.now() - pending.created_at > CONFIRM_MINUTES * 60_000) {
-    finish("expired", "The confirmation code expired before it was used.");
-    await outbox.sendText(chat.chatId, "Kode konfirmasi itu sudah kedaluwarsa, jadi tidak ada yang berubah. Minta ulang ke saya kalau masih perlu.");
-    return true;
-  }
-  finish("running", "");
-  try {
-    const tool = APPS.find((t) => t.name === pending.tool);
-    if (!tool) throw new Error("That action no longer exists.");
-    const result = await tool.run(tool.schema.parse(JSON.parse(pending.input)), { number: chat.sender.number, chatId: chat.chatId });
-    finish("done", result);
-    await outbox.sendText(chat.chatId, `✅ ${result}`);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    finish("failed", message);
-    await outbox.sendText(chat.chatId, `❌ Google tidak menjalankan itu: ${message}`);
-  }
-  return true;
-}
-
-/** What happened to changes Claude proposed in this chat since its last turn, so it knows on the next message. */
-export function googleNotes(chat: ChatContext): string | undefined {
-  const rows = db
-    .prepare("SELECT id, tool, summary, status, result FROM google_pending WHERE chat_id = ? AND noted = 0 AND status NOT IN ('pending', 'running')")
-    .all(chat.chatId) as { id: number; tool: string; summary: string; status: string; result: string | null }[];
-  if (rows.length === 0) return undefined;
-  db.prepare(`UPDATE google_pending SET noted = 1 WHERE id IN (${rows.map(() => "?").join(",")})`).run(...rows.map((r) => r.id));
-  const lines = rows.map((r) => `- ${r.tool} ("${r.summary.split("\n")[0]}"): ${r.status}${r.result ? ` — ${r.result}` : ""}`);
-  return `[System note — Google changes you proposed earlier:\n${lines.join("\n")}]`;
+  const result = await tool.run(parsed, { number: chat.sender.number, chatId: chat.chatId });
+  if (!tool.preview) return result;
+  // Sent by code, not by Claude, so the person sees exactly what changed in their Google.
+  await outbox.sendText(chat.chatId, `✅ ${result}\n\n${tool.preview(parsed as never)}`);
+  return `${result}\nThey were sent that, with the details, so don't repeat it; answer in one short line at most.`;
 }

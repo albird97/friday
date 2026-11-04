@@ -56,13 +56,13 @@
   {
     "id": "friday-10",
     "name": "Bantu Reservasi",
-    "description": "Friday menghubungi restoran atau toko untuk Anda, misalnya reservasi meja, lalu melaporkan hasilnya. Selalu minta konfirmasi dulu sebelum mengirim. (Fitur terbatas.)\n\nContoh: \"Reservasi meja 4 orang di Sushi Tei PIK Sabtu jam 7 malam.\"",
+    "description": "Friday menghubungi restoran atau toko untuk Anda, misalnya reservasi meja, lalu melaporkan hasilnya. Kamu bisa melihat setiap pesan yang dikirim. (Fitur terbatas.)\n\nContoh: \"Reservasi meja 4 orang di Sushi Tei PIK Sabtu jam 7 malam.\"",
     "image": "10-reservasi.jpg"
   },
   {
     "id": "friday-11",
     "name": "Akun Google",
-    "description": "Hubungkan akun Google milikmu, lalu tanya jadwal, cari email, atau buat acara dari chat pribadi. Setiap perubahan dikonfirmasi dulu dengan kode.\n\nContoh: \"Besok aku ada acara apa?\"",
+    "description": "Hubungkan akun Google milikmu, lalu tanya jadwal, cari email, atau buat acara dari chat pribadi. Kamu langsung diberi tahu apa yang dilakukan.\n\nContoh: \"Besok aku ada acara apa?\"",
     "image": "11-google.jpg"
   },
   {

@@ -3,6 +3,6 @@
   { "q": "Perlu install aplikasi?", "a": "Tidak. Cukup WhatsApp yang sudah ada di HP kamu." },
   { "q": "Bisa dipakai di grup?", "a": "Bisa. Mention Friday, balas pesannya, atau awali pesan dengan \"Friday,\" dan dia akan ikut membantu." },
   { "q": "Bisa pakai bahasa apa?", "a": "Bahasa apa saja. Friday membalas dengan bahasa yang sama dengan kamu." },
-  { "q": "Bisa terhubung ke akun Google?", "a": "Bisa, lewat chat pribadi dengan perintah /google. Tiap orang menghubungkan akunnya sendiri, dan setiap perubahan harus dikonfirmasi dengan kode." },
+  { "q": "Bisa terhubung ke akun Google?", "a": "Bisa, lewat chat pribadi dengan perintah /google. Tiap orang menghubungkan akunnya sendiri. Yang kamu minta langsung dijalankan, dan Friday memberi tahu apa yang dilakukan." },
   { "q": "Bagaimana dengan data dan privasi?", "a": "Semua penjelasannya ada di kebijakan privasi Friday.", "link": "/privacy", "linkText": "Baca kebijakan privasi" }
 ]

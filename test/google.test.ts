@@ -4,7 +4,7 @@ import { beforeEach, describe, it } from "node:test";
 import { handleIncoming, type Incoming } from "../src/bot.js";
 import { db } from "../src/db.js";
 import { decrypt, encrypt, finishConnect, googleAccount, SCOPES } from "../src/google.js";
-import { confirmGoogle, googleNotes, googleTools } from "../src/googleapps.js";
+import { googleTools } from "../src/googleapps.js";
 import { buildSystemPrompt } from "../src/prompt.js";
 import { runTool } from "../src/tools.js";
 import type { ChatContext, Outbox } from "../src/types.js";
@@ -68,12 +68,11 @@ async function connect(who: { name: string; number: string }, code: string, comm
   return link;
 }
 
-const codeFromPreview = () => /YA (\d{4})/.exec(sent.at(-1)!.text)![1];
 const tool = (chat: ChatContext, name: string, input: unknown) => runTool(name, input, { chat, outbox });
 const sentMail = () => calls.filter((c) => c.url.endsWith("/messages/send"));
 
 beforeEach(() => {
-  for (const table of ["google_accounts", "google_youtube", "google_links", "google_pending"]) db.prepare(`DELETE FROM ${table}`).run();
+  for (const table of ["google_accounts", "google_youtube", "google_links"]) db.prepare(`DELETE FROM ${table}`).run();
   sent = [] as Sent[];
   calls = [] as Call[];
   tokenScopes = MAIN_SCOPES;
@@ -248,46 +247,24 @@ describe("changing things in Google", () => {
     assert.ok(!logged.some((l) => l.includes("Dokter gigi")));
   });
 
-  it("sends nothing until the person answers the code, and shows the real recipient", async () => {
+  it("sends at once and shows the person exactly what went out, to whom", async () => {
     await connect(WIFE, "sarah");
     const result = await tool(chatOf(WIFE), "google_gmail_send", mail);
-    assert.match(result.content, /Nothing has changed yet/);
-    assert.equal(sentMail().length, 0);
-    assert.match(sent.at(-1)!.text, /Kirim email ke: \*bos@contoh\.com\*/);
-    assert.ok(!result.content.match(/\d{4}/), "Claude never sees the code");
-
-    await say(chatOf(WIFE), `YA ${codeFromPreview()}`);
+    assert.equal(result.isError, false, result.content);
     assert.equal(sentMail().length, 1);
     const raw = Buffer.from((JSON.parse(sentMail()[0].body) as { raw: string }).raw, "base64url").toString();
     assert.match(raw, /^To: bos@contoh\.com\r\n/);
-    assert.match(sent.at(-1)!.text, /Email terkirim/);
-    assert.match(googleNotes(chatOf(WIFE))!, /google_gmail_send.*done/);
-    assert.equal(googleNotes(chatOf(WIFE)), undefined);
+    assert.match(sent.at(-1)!.text, /^✅ Email terkirim/);
+    assert.match(sent.at(-1)!.text, /Kirim email ke: \*bos@contoh\.com\*/, "the real recipient, from the input");
+    assert.ok(!/YA \d{4}/.test(sent.at(-1)!.text), "no code to type");
   });
 
-  it("a code works once, and only for the person who got it", async () => {
+  it("acts only as the person asking", async () => {
     await connect(WIFE, "sarah");
     await connect(ADMIN, "albert");
+    calls = [] as Call[];
     await tool(chatOf(WIFE), "google_gmail_send", mail);
-    const code = codeFromPreview();
-
-    assert.equal(await confirmGoogle(chatOf(ADMIN), `YA ${code}`, outbox), false);
-    assert.equal(sentMail().length, 0);
-
-    assert.equal(await confirmGoogle(chatOf(WIFE), `YA ${code}`, outbox), true);
-    assert.equal(sentMail().length, 1);
-    assert.equal(await confirmGoogle(chatOf(WIFE), `YA ${code}`, outbox), false);
-    assert.equal(sentMail().length, 1);
-  });
-
-  it("an expired code changes nothing", async () => {
-    await connect(WIFE, "sarah");
-    await tool(chatOf(WIFE), "google_gmail_send", mail);
-    const code = codeFromPreview();
-    db.prepare("UPDATE google_pending SET created_at = 0").run();
-    await say(chatOf(WIFE), `YA ${code}`);
-    assert.equal(sentMail().length, 0);
-    assert.match(sent.at(-1)!.text, /kedaluwarsa/);
+    assert.equal(sentMail()[0].auth, "Bearer access-of-refresh-sarah");
   });
 
   it("a crafted address can't add mail headers, and bad addresses are refused", async () => {
@@ -295,16 +272,14 @@ describe("changing things in Google", () => {
     const bad = await tool(chatOf(WIFE), "google_gmail_send", { ...mail, to: "a@b.com\r\nBcc: x@y.com" });
     assert.equal(bad.isError, true);
     await tool(chatOf(WIFE), "google_gmail_send", { ...mail, subject: "Hai\r\nBcc: x@y.com" });
-    await say(chatOf(WIFE), `YA ${codeFromPreview()}`);
     const raw = Buffer.from((JSON.parse(sentMail()[0].body) as { raw: string }).raw, "base64url").toString();
     assert.doesNotMatch(raw, /^Bcc:/m);
   });
 
-  it("adds a calendar event with a Meet link after confirming", async () => {
+  it("adds a calendar event with a Meet link", async () => {
     await connect(WIFE, "sarah");
     await tool(chatOf(WIFE), "google_calendar_add", { title: "Rapat", start: "2026-11-03T10:00:00", end: "2026-11-03T11:00:00", meet: true });
     assert.match(sent.at(-1)!.text, /Tambah acara: \*Rapat\*/);
-    await say(chatOf(WIFE), `YA ${codeFromPreview()}`);
     const post = calls.find((c) => c.method === "POST" && c.url.includes("/calendar/v3/"))!;
     const body = JSON.parse(post.body) as { start: { timeZone: string }; conferenceData: unknown };
     assert.equal(body.start.timeZone, "Asia/Jakarta");

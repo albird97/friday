@@ -9,8 +9,8 @@ import type { ChatContext, Outbox } from "./types.js";
 // What Friday can do in someone's own Hevy. Everything runs straight away, without a confirmation code. Before a change
 // the code below checks the input against their exercises and the kind of exercise, and afterwards it sends the person a
 // summary built from what was actually saved (not from Claude's words), so a misread photo or a wrong guess shows at once
-// and can be fixed. Hevy's API has no delete, so the two mistakes that can't be fixed from here are stopped first: a
-// workout at the same time as one already saved, and an edit that would change privacy Hevy doesn't reveal.
+// and can be fixed. Hevy's API has no delete, so the summary also points out what can only be undone in the app: a
+// workout at the same time as one already there, and privacy set on an edit because Hevy doesn't reveal the old one.
 
 const MAX_CHARS = 20_000;
 const LB = 0.45359237;
@@ -443,19 +443,6 @@ async function measurementOn(number: string, date: string): Promise<Measurement 
   }
 }
 
-/** A workout is already saved at that time, so saving this one may well be a second copy. */
-export class OverlapError extends Error {
-  constructor(
-    readonly title: string,
-    start: string,
-  ) {
-    super(
-      `Not saved: their Hevy already has "${title}" at that time (${formatDateTime(new Date(start))}). Ask whether this is the same workout; ` +
-        "if it's a different one, call again with even_if_overlapping: true. If it's the same, nothing needs saving.",
-    );
-  }
-}
-
 // --- The tools -----------------------------------------------------------------------------------------------------
 
 type Reader<S extends z.ZodObject = z.ZodObject> = { name: string; description: string; schema: S; read: (input: z.infer<S>, ctx: Ctx) => Promise<string> };
@@ -706,16 +693,24 @@ const WRITERS = [
       description: z.string().max(2000).optional(),
       is_private: z.boolean().optional().describe("Default true: only they see it. false shares it with their Hevy followers."),
       exercises: z.array(workoutExercise).min(1).max(40),
-      even_if_overlapping: z.boolean().optional().describe("Only after they said it's a different workout from the one already saved at that time."),
     }),
     async prepare(input, { number }) {
       const times = workoutTimes(input.start, input.end, input.duration_minutes);
       const exercises = await planExercises(number, input.exercises, false);
       const plan: WorkoutPlan = { title: line(input.title), description: input.description?.trim() || null, ...times, is_private: input.is_private ?? true, exercises };
-      // Hevy can't delete, so a second copy of a workout would stay: ask first.
-      const twin = input.even_if_overlapping ? undefined : await overlapping(number, times.start_time, times.end_time);
-      if (twin) throw new OverlapError(line(twin.title ?? "workout"), twin.start_time);
-      const summary = [`${when(plan.start_time, plan.end_time)} · ${privacyText(plan.is_private)}`, plan.description && `_${line(plan.description)}_`, "", ...exerciseLines(exercises, false)];
+      // Hevy can't delete, so a second copy of a workout would stay: say so, so they can remove one in the app.
+      const twin = await overlapping(number, times.start_time, times.end_time);
+      // The very same workout saved again (a repeated call) would only be a copy nobody can delete from here.
+      if (twin && twin.title === plan.title && isoSeconds(twin.start_time) === plan.start_time && isoSeconds(twin.end_time) === plan.end_time) {
+        throw new Error(`This exact workout ("${plan.title}" at that time) is already in their Hevy, so nothing new was saved.`);
+      }
+      const summary = [
+        `${when(plan.start_time, plan.end_time)} · ${privacyText(plan.is_private)}`,
+        plan.description && `_${line(plan.description)}_`,
+        "",
+        ...exerciseLines(exercises, false),
+        twin && `\n⚠️ Di Hevy-mu juga ada *${line(twin.title ?? "workout")}* di jam yang sama. Kalau ini dobel, hapus salah satunya di aplikasi Hevy.`,
+      ];
       return { summary: joinLines(summary), plan };
     },
     async apply(plan: WorkoutPlan, { number }) {
@@ -742,7 +737,7 @@ const WRITERS = [
       end: z.string().optional(),
       duration_minutes: z.number().int().min(1).max(720).optional(),
       description: z.string().max(2000).optional(),
-      is_private: z.boolean().optional().describe("Hevy's API demands it on every edit but doesn't reveal it; needed for workouts Friday didn't save."),
+      is_private: z.boolean().optional().describe("Hevy's API demands it on every edit but doesn't reveal it. Unknown workouts become private unless given."),
       exercises: z.array(workoutExercise).min(1).max(40).optional(),
     }),
     async prepare(input, { number }) {
@@ -755,10 +750,9 @@ const WRITERS = [
           ? workoutTimes(start, input.end ?? (input.duration_minutes ? undefined : new Date(fromLocal(start).getTime() + length).toISOString()), input.duration_minutes)
           : { start_time: isoSeconds(current.start_time), end_time: isoSeconds(current.end_time) };
       const known = knownPrivacy(number, current.id);
-      const isPrivate = input.is_private ?? known;
-      if (isPrivate === undefined) {
-        throw new Error("Not changed: Hevy doesn't say whether this workout is public or private, and every edit sets it. Ask them which it should be, then call again with is_private.");
-      }
+      // Unknown privacy becomes private: hiding a public workout is the smaller mistake than showing a private one.
+      const guessed = input.is_private === undefined && known === undefined;
+      const isPrivate = input.is_private ?? known ?? true;
       const exercises = input.exercises ? await planExercises(number, input.exercises, false) : null;
       const plan: WorkoutEdit = {
         workout_id: current.id,
@@ -774,7 +768,7 @@ const WRITERS = [
         plan.title !== current.title && `Judul baru: *${plan.title}*`,
         timeChanged && `Waktu baru: ${when(plan.start_time, plan.end_time)}`,
         input.description !== undefined && `Deskripsi baru: _${line(plan.description ?? "(kosong)")}_`,
-        `Privasi: ${privacyText(isPrivate)}`,
+        `Privasi: ${privacyText(isPrivate)}${guessed ? ` _(Hevy tidak memberi tahu setelan lamanya; bilang "jadikan publik" kalau perlu)_` : ""}`,
         ...(exercises ? ["", "Latihan sekarang:", ...exerciseLines(exercises, false)] : []),
       ];
       return { summary: joinLines(summary), plan };

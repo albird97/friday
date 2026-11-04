@@ -65,7 +65,7 @@ function privacyPage(): string {
 <p>Kalau kamu menerima ajakan workout bareng, selama sesi itu sesama anggota bisa mencatat dan melihat set yang dicatat untukmu, begitu juga anggota grup WhatsApp tempat sesi dimulai, seperti yang disebut di ajakannya. ${bot} memakai daftar latihan di Hevy-mu untuk mencocokkan nama latihan. Saat sesi selesai, catatan itu disimpan ke Hevy-mu dan kamu dapat ringkasannya.</p>
 
 <h2>Cara data dipakai</h2>
-<p>Data dipakai hanya untuk menjalankan permintaanmu. Setiap perubahan, seperti mengirim email atau mengubah acara, baru dijalankan setelah kamu mengonfirmasinya dengan kode. ${bot} tidak bekerja di grup untuk data Google.</p>
+<p>Data dipakai hanya untuk menjalankan permintaanmu. Perubahan, seperti mengirim email atau mengubah acara, dijalankan saat kamu memintanya, dan kamu langsung diberi tahu apa yang dilakukan. ${bot} tidak bekerja di grup untuk data Google.</p>
 <p>${bot} tidak menjual data, tidak memakainya untuk iklan atau penilaian kredit, dan tidak memakainya untuk melatih model AI umum.</p>
 
 <h2>Pihak lain</h2>

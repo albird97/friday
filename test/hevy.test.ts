@@ -222,16 +222,13 @@ describe("logging a workout", () => {
     assert.equal(writes().at(-1)!.body.workout.exercises[0].exercise_template_id, "D04AC939");
   });
 
-  it("won't save a second copy of a workout already in Hevy unless they say it's another one", async () => {
+  it("saves even with another workout at the same time, and says so", async () => {
     await link(WIFE, KEYS.sarah);
     hevyFake.accounts[KEYS.sarah].workouts.push({ id: "old", title: "Chest day", start_time: "2026-10-28T00:10:00Z", end_time: "2026-10-28T01:00:00Z", exercises: [] });
-    const refused = await tool(chatOf(WIFE), "hevy_log_workout", workout);
-    assert.equal(refused.isError, true);
-    assert.match(refused.content, /already has "Chest day" at that time/);
-    assert.equal(writes().length, 0);
-    const again = await tool(chatOf(WIFE), "hevy_log_workout", { ...workout, even_if_overlapping: true });
-    assert.equal(again.isError, false, again.content);
+    const saved = await tool(chatOf(WIFE), "hevy_log_workout", workout);
+    assert.equal(saved.isError, false, saved.content);
     assert.equal(writes().filter((c) => c.path === "/workouts").length, 1);
+    assert.match(last(), /⚠️ Di Hevy-mu juga ada \*Chest day\* di jam yang sama\. Kalau ini dobel, hapus salah satunya di aplikasi Hevy\./);
   });
 
   it("finds that workout even when backfilling an old one", async () => {
@@ -241,14 +238,15 @@ describe("logging a workout", () => {
       hevyFake.accounts[KEYS.sarah].workouts.push({ id: `recent${i}`, title: `Recent ${i}`, start_time: new Date(start).toISOString(), end_time: new Date(start + 3_600_000).toISOString(), exercises: [] });
     }
     hevyFake.accounts[KEYS.sarah].workouts.push({ id: "old", title: "Chest day", start_time: "2026-10-15T00:10:00Z", end_time: "2026-10-15T01:00:00Z", exercises: [] });
-    const refused = await tool(chatOf(WIFE), "hevy_log_workout", { ...workout, start: "2026-10-15T07:00" });
-    assert.match(refused.content, /already has "Chest day"/);
+    await tool(chatOf(WIFE), "hevy_log_workout", { ...workout, start: "2026-10-15T07:00" });
+    assert.match(last(), /⚠️ Di Hevy-mu juga ada \*Chest day\*/);
   });
 
   it("saves one copy when the same workout is asked for twice at once", async () => {
     await link(WIFE, KEYS.sarah);
     const [a, b] = await Promise.all([tool(chatOf(WIFE), "hevy_log_workout", workout), tool(chatOf(WIFE), "hevy_log_workout", workout)]);
     assert.deepEqual([a.isError, b.isError].sort(), [false, true]);
+    assert.match([a, b].find((r) => r.isError)!.content, /already in their Hevy, so nothing new was saved/);
     assert.equal(writes().filter((c) => c.path === "/workouts").length, 1);
   });
 });
@@ -280,15 +278,15 @@ describe("changing what's in Hevy", () => {
     assert.match(last(), /✅ Workout diubah di Hevy: \*Pull \(back & biceps\)\*\.\n\nSebelumnya: \*Pull\*/);
   });
 
-  it("asks about privacy it can't know before editing a workout from the app", async () => {
+  it("makes a workout from the app private when Hevy won't say, and tells them", async () => {
     await link(WIFE, KEYS.sarah);
     hevyFake.accounts[KEYS.sarah].workouts.push({ id: "app1", title: "From the app", start_time: "2026-10-27T10:00:00Z", end_time: "2026-10-27T11:00:00Z", exercises: [] });
-    const refused = await tool(chatOf(WIFE), "hevy_update_workout", { workout_id: "app1", description: "Felt strong" });
-    assert.equal(refused.isError, true);
-    assert.match(refused.content, /Ask them which it should be/);
-    assert.equal(writes().length, 0);
-    await tool(chatOf(WIFE), "hevy_update_workout", { workout_id: "app1", description: "Felt strong", is_private: false });
+    await tool(chatOf(WIFE), "hevy_update_workout", { workout_id: "app1", description: "Felt strong" });
+    assert.equal(writes().at(-1)!.body.workout.is_private, true);
+    assert.match(last(), /Privasi: 🔒 Privat \(hanya kamu\) _\(Hevy tidak memberi tahu setelan lamanya; bilang "jadikan publik" kalau perlu\)_/);
+    await tool(chatOf(WIFE), "hevy_update_workout", { workout_id: "app1", is_private: false });
     assert.equal(writes().at(-1)!.body.workout.is_private, false);
+    assert.doesNotMatch(last(), /tidak memberi tahu/);
   });
 
   it("builds a whole program in a new folder in one go", async () => {
