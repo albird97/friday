@@ -194,7 +194,7 @@ sudo /opt/friday/app/scripts/linux-service.sh google fridayai.my.id
 
 Anyone who uses [Hevy](https://www.hevyapp.com) with Hevy Pro can link their own account: send `/hevy` in a private
 chat, copy the API key from [hevy.com/settings?developer](https://hevy.com/settings?developer), and send
-`/hevy <api key>` (or paste the key on its own right after `/hevy`). Friday checks the key with Hevy and keeps it
+`/hevy <api key>` (or just paste the key). Friday checks the key with Hevy and keeps it
 encrypted with `GOOGLE_TOKEN_KEY`, which is all the setup Hevy needs. The key is handled before Claude, so it never
 reaches Claude or the chat history. `/hevy putus` forgets it.
 

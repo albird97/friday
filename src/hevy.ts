@@ -10,7 +10,6 @@ import type { ChatContext } from "./types.js";
 
 const API = "https://api.hevyapp.com/v1";
 export const KEY_PAGE = "https://hevy.com/settings?developer";
-const KEY_WAIT_MINUTES = 10;
 const CATALOG_MINUTES = 30;
 
 export const hevyEnabled = /^[0-9a-f]{64}$/i.test(config.GOOGLE_TOKEN_KEY);
@@ -105,11 +104,8 @@ export function unwrap<T>(body: unknown, key: string): T | undefined {
 
 // --- Linking an account --------------------------------------------------------------------------------------------
 
-const waitingForKey = new Map<string, number>();
-
 /** What someone reads before they paste a key. */
-export function connectMessage(number: string, adminName: string): string {
-  waitingForKey.set(number, Date.now());
+export function connectMessage(adminName: string): string {
   const bot = config.BOT_NAME;
   return [
     "🏋️ *Hubungkan Hevy*",
@@ -126,10 +122,12 @@ export function connectMessage(number: string, adminName: string): string {
   ].join("\n\n");
 }
 
-/** True when `text` is a bare key pasted soon after /hevy, so it can be handled like `/hevy <key>` and kept from Claude. */
-export function isAwaitedKey(chat: ChatContext, text: string): boolean {
-  const asked = waitingForKey.get(chat.sender.number);
-  return hevyAllowed(chat) && asked !== undefined && Date.now() - asked < KEY_WAIT_MINUTES * 60_000 && UUID.test(text.trim());
+/**
+ * True when a private message is nothing but a Hevy-style key (a UUID), whenever it's sent. It's handled like
+ * `/hevy <key>`, so a key pasted on its own never reaches Claude; such a message means little else.
+ */
+export function isBareKey(chat: ChatContext, text: string): boolean {
+  return hevyAllowed(chat) && UUID.test(text.trim());
 }
 
 /** Checks a key with Hevy and keeps it. Returns the Hevy profile name; throws HevyError when Hevy says no. */
@@ -137,7 +135,6 @@ export async function connectHevy(number: string, chatId: string, apiKey: string
   const info = await call<{ data?: { name?: string } }>(apiKey, "/user/info");
   const name = info?.data?.name?.trim() || "akun Hevy";
   db.prepare("INSERT OR REPLACE INTO hevy_accounts (number, name, api_key, connected_at) VALUES (?, ?, ?, ?)").run(number, name, encrypt(apiKey), Date.now());
-  waitingForKey.delete(number);
   catalogs.delete(number);
   expireSession(chatId); // tools and the system prompt are fixed for a session
   return name;
@@ -145,7 +142,6 @@ export async function connectHevy(number: string, chatId: string, apiKey: string
 
 /** Forgets the key, pending changes and the chat history that may hold Hevy data. Hevy has no way to revoke a key from here. */
 export function disconnectHevy(number: string, chatId: string): boolean {
-  waitingForKey.delete(number);
   catalogs.delete(number);
   const gone = db.prepare("DELETE FROM hevy_accounts WHERE number = ?").run(number).changes > 0;
   if (!gone) return false;

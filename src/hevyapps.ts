@@ -112,7 +112,7 @@ function setText(s: SetLike, lang: Lang, exerciseType?: string): string {
 }
 
 /** "40 kg × 10 (pemanasan), 3× 80 kg × 8": identical sets in a row are counted once. */
-function setsText(sets: SetLike[], lang: Lang, exerciseType?: string): string {
+export function setsText(sets: SetLike[], lang: Lang, exerciseType?: string): string {
   const groups: { text: string; count: number }[] = [];
   for (const s of sets) {
     const text = setText(s, lang, exerciseType);
@@ -226,14 +226,14 @@ function knownPrivacy(number: string, workoutId: string): boolean | undefined {
 
 // --- Checking what Claude wants to save -----------------------------------------------------------------------------
 
-const newExercise = z.object({
+export const newExercise = z.object({
   title: z.string().min(2).max(100).describe('English, Hevy style: "Name (Equipment)", e.g. "Hip Thrust (Machine)".'),
   exercise_type: z.enum(EXERCISE_TYPES),
   equipment_category: z.enum(EQUIPMENT),
   muscle_group: z.enum(MUSCLES),
   other_muscles: z.array(z.enum(MUSCLES)).max(6).optional(),
 });
-type NewExercise = z.infer<typeof newExercise>;
+export type NewExercise = z.infer<typeof newExercise>;
 
 const rpe = z
   .number()
@@ -249,7 +249,7 @@ const setFields = {
   duration_seconds: z.number().int().min(0).max(86_400).optional(),
   custom_metric: z.number().min(0).optional().describe("Floors or steps, for stair machines."),
 };
-const workoutSet = z.object({ ...setFields, rpe });
+export const workoutSet = z.object({ ...setFields, rpe });
 const routineSet = z.object({
   ...setFields,
   reps: setFields.reps.describe("Target reps."),
@@ -263,7 +263,7 @@ const exerciseRef = {
 };
 const workoutExercise = z.object({ ...exerciseRef, sets: z.array(workoutSet).min(1).max(60) });
 const routineExercise = z.object({ ...exerciseRef, rest_seconds: z.number().int().min(0).max(900).optional(), sets: z.array(routineSet).min(1).max(30) });
-type SetInput = z.infer<typeof routineSet> & { rpe?: number };
+export type SetInput = z.infer<typeof routineSet> & { rpe?: number };
 type ExerciseInput = { exercise_template_id?: string; new_exercise?: NewExercise; notes?: string; superset?: number; rest_seconds?: number; sets: SetInput[] };
 
 type Planned = { template_id?: string; create?: NewExercise; title: string; type?: string; isNew: boolean; notes: string | null; superset: number | null; rest_seconds: number | null; sets: ApiSet[] };
@@ -281,6 +281,9 @@ const RULES: Record<ExerciseType, { takes: Value[]; needs: Value[]; needsOne?: V
   distance_duration: { takes: ["distance_meters", "duration_seconds"], needs: [], needsOne: ["distance_meters", "duration_seconds"] },
   short_distance_weight: { takes: ["weight_kg", "distance_meters"], needs: ["distance_meters"] },
 };
+
+/** Throws, saying why, when a logged set doesn't fit the exercise (as hevy_log_workout would). */
+export const checkSet = (s: SetInput, type: string | undefined, title: string) => void toApiSet(s, type, title, false);
 
 function toApiSet(s: SetInput, type: string | undefined, title: string, routine: boolean): ApiSet {
   if (s.weight_kg !== undefined && s.weight_lb !== undefined) throw new Error(`${title}: give weight_kg or weight_lb, not both.`);
@@ -310,7 +313,7 @@ function toApiSet(s: SetInput, type: string | undefined, title: string, routine:
     duration_seconds: values.duration_seconds ?? null,
     custom_metric: s.custom_metric ?? null,
   };
-  if (routine) set.rep_range = s.rep_range ?? null;
+  if (routine && s.rep_range) set.rep_range = s.rep_range;
   else set.rpe = s.rpe ?? null;
   return set;
 }
@@ -401,7 +404,7 @@ function workoutTimes(start: string, end: string | undefined, minutes: number | 
 
 /** Another workout at the same time, which usually means it's already logged (in the app, or earlier here). */
 async function overlapping(number: string, start: string, end: string, except?: string): Promise<Workout | undefined> {
-  const recent = await workoutsBetween(number, new Date(Date.parse(start) - DAY), undefined, 10, 2).catch(() => []);
+  const recent = await workoutsBetween(number, new Date(Date.parse(start) - DAY), new Date(Date.parse(end) + DAY), 40, 15).catch(() => []);
   return recent.find((w) => w.id !== except && Date.parse(w.start_time) < Date.parse(end) && Date.parse(w.end_time) > Date.parse(start));
 }
 
@@ -597,7 +600,7 @@ const READERS = [
     description: "This person's body measurements in Hevy (weight, body fat, sizes), newest first.",
     schema: z.object({ from: day.optional(), to: day.optional() }),
     async read({ from, to }, { number }) {
-      const all = await pages<Measurement>(number, "/body_measurements", "body_measurements", 10);
+      const all = await pages<Measurement>(number, "/body_measurements", "body_measurements", 60);
       const rows = all
         .filter((m) => (!from || m.date >= from) && (!to || m.date <= to))
         .sort((a, b) => b.date.localeCompare(a.date))
@@ -670,7 +673,8 @@ type WorkoutPlan = { title: string; description: string | null; start_time: stri
 type WorkoutEdit = Omit<WorkoutPlan, "exercises"> & { workout_id: string; exercises: Planned[] | null };
 type RoutinePlan = { title: string; notes: string | null; exercises: Planned[] };
 type RoutinesPlan = { folder: { id: number | null; create: string | null; title: string } | null; routines: RoutinePlan[] };
-type RoutineEdit = { routine_id: string; title: string; notes: string | null; exercises: Planned[] | null };
+// notes is undefined when unchanged: Hevy's GET doesn't return a routine's notes, so they're only sent when given.
+type RoutineEdit = { routine_id: string; title: string; notes?: string | null; exercises: Planned[] | null };
 
 const apiWorkoutExercises = (exercises: Planned[]) => exercises.map((e) => ({ exercise_template_id: e.template_id, superset_id: e.superset, notes: e.notes, sets: e.sets }));
 const apiRoutineExercises = (exercises: Planned[]) =>
@@ -741,9 +745,10 @@ const WRITERS = [
       const current = unwrap<Workout>(await hevy(number, `/workouts/${encodeURIComponent(input.workout_id)}`), "workout");
       if (!current?.id) throw new Error(`There's no workout ${input.workout_id} in their Hevy.`);
       const length = Date.parse(current.end_time) - Date.parse(current.start_time);
+      const start = input.start ?? current.start_time;
       const times =
         input.start || input.end || input.duration_minutes
-          ? workoutTimes(input.start ?? current.start_time, input.end, input.end ? undefined : (input.duration_minutes ?? Math.round(length / 60_000)))
+          ? workoutTimes(start, input.end ?? (input.duration_minutes ? undefined : new Date(fromLocal(start).getTime() + length).toISOString()), input.duration_minutes)
           : { start_time: isoSeconds(current.start_time), end_time: isoSeconds(current.end_time) };
       const known = knownPrivacy(number, current.id);
       const isPrivate = input.is_private ?? known ?? true;
@@ -871,7 +876,7 @@ const WRITERS = [
       if (!current?.id) throw new Error(`There's no routine ${input.routine_id} in their Hevy.`);
       if (!input.title && input.notes === undefined && !input.exercises) throw new Error("Nothing to change.");
       const exercises = input.exercises ? await planExercises(number, input.exercises, true) : null;
-      const plan: RoutineEdit = { routine_id: current.id, title: input.title ? line(input.title) : (current.title ?? "Routine"), notes: input.notes !== undefined ? input.notes.trim() || null : (current.notes ?? null), exercises };
+      const plan: RoutineEdit = { routine_id: current.id, title: input.title ? line(input.title) : (current.title ?? "Routine"), notes: input.notes === undefined ? undefined : input.notes.trim() || null, exercises };
       const preview = [
         "✏️ *Ubah rutinitas di Hevy*",
         `*${line(current.title ?? "")}*`,
@@ -887,7 +892,7 @@ const WRITERS = [
       if (!current?.id) throw new HevyError("That routine isn't in Hevy any more.");
       await hevy(number, `/routines/${encodeURIComponent(plan.routine_id)}`, {
         method: "PUT",
-        json: { routine: { title: plan.title, notes: plan.notes, exercises: plan.exercises ? apiRoutineExercises(plan.exercises) : keepRoutineExercises(current) } },
+        json: { routine: { title: plan.title, ...(plan.notes !== undefined && { notes: plan.notes }), exercises: plan.exercises ? apiRoutineExercises(plan.exercises) : keepRoutineExercises(current) } },
       });
       return { text: `Rutinitas diubah di Hevy: *${plan.title}*.${madeText(made)}` };
     },
@@ -967,24 +972,35 @@ export async function runHevyTool(name: string, input: unknown, chat: ChatContex
   if (!tool) throw new Error(`No Hevy tool called ${name}.`);
   const parsed = tool.schema.parse(input);
   const ctx = { number: chat.sender.number, chatId: chat.chatId };
-  return isWriter(tool) ? propose(tool, parsed, chat, outbox) : tool.read(parsed, ctx);
+  return isWriter(tool) ? propose(tool, parsed, ctx, outbox) : tool.read(parsed, ctx);
+}
+
+/**
+ * Sends `number` (in their private chat `chatId`) the hevy_log_workout preview for `input`, to save into their own
+ * Hevy with their own code. Group workouts use it, so nothing lands in someone's Hevy without them confirming it.
+ */
+export async function proposeWorkout(target: Ctx, input: unknown, outbox: Outbox, intro?: string): Promise<string> {
+  const tool = TOOLS.find((t) => t.name === "hevy_log_workout") as Writer;
+  return propose(tool, tool.schema.parse(input), target, outbox, intro);
 }
 
 // --- Confirming changes --------------------------------------------------------------------------------------------
 
-async function propose(tool: Writer, input: unknown, chat: ChatContext, outbox: Outbox): Promise<string> {
-  const { preview, plan, warning } = await tool.prepare(input as never, { number: chat.sender.number, chatId: chat.chatId });
+async function propose(tool: Writer, input: unknown, target: Ctx, outbox: Outbox, intro?: string): Promise<string> {
+  const { preview, plan, warning } = await tool.prepare(input as never, target);
   const code = String(randomInt(1000, 10_000));
+  // A corrected proposal replaces the earlier one, so confirming both can't save the same thing twice.
+  db.prepare("UPDATE hevy_pending SET status = 'superseded' WHERE chat_id = ? AND number = ? AND tool = ? AND status = 'pending'").run(target.chatId, target.number, tool.name);
   db.prepare("INSERT INTO hevy_pending (chat_id, number, code, tool, plan, summary, status, noted, created_at) VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?)").run(
-    chat.chatId,
-    chat.sender.number,
+    target.chatId,
+    target.number,
     code,
     tool.name,
     JSON.stringify(plan),
     preview,
     Date.now(),
   );
-  await outbox.sendText(chat.chatId, `${preview}${warning ? `\n\n⚠️ ${warning}` : ""}\n\nBalas *YA ${code}* dalam ${CONFIRM_MINUTES} menit untuk menyimpan ke Hevy. Abaikan pesan ini untuk membatalkan.`);
+  await outbox.sendText(target.chatId, `${intro ? `${intro}\n\n` : ""}${preview}${warning ? `\n\n⚠️ ${warning}` : ""}\n\nBalas *YA ${code}* dalam ${CONFIRM_MINUTES} menit untuk menyimpan ke Hevy. Abaikan pesan ini untuk membatalkan.`);
   return (
     "Nothing is saved yet. They were sent this preview with a code, and it's saved only when they reply with that code. " +
     `Don't repeat the preview or the code, and don't say it's saved; mention anything you weren't sure about.${warning ? `\nWarning shown to them: ${warning}` : ""}\nPreview:\n${preview}`
@@ -997,10 +1013,15 @@ type Pending = { id: number; tool: string; plan: string; created_at: number };
 export async function confirmHevy(chat: ChatContext, text: string, outbox: Outbox): Promise<boolean> {
   const match = hevyAllowed(chat) ? CONFIRM.exec(text) : null;
   if (!match) return false;
+  // Codes older than a day are ignored rather than answered, so one can't swallow a fresh code from another feature.
   const pending = db
-    .prepare("SELECT id, tool, plan, created_at FROM hevy_pending WHERE chat_id = ? AND number = ? AND code = ? AND status = 'pending' ORDER BY id DESC LIMIT 1")
-    .get(chat.chatId, chat.sender.number, match[1]) as Pending | undefined;
+    .prepare("SELECT id, tool, plan, status, created_at FROM hevy_pending WHERE chat_id = ? AND number = ? AND code = ? AND status IN ('pending', 'superseded') AND created_at > ? ORDER BY id DESC LIMIT 1")
+    .get(chat.chatId, chat.sender.number, match[1], Date.now() - DAY) as (Pending & { status: string }) | undefined;
   if (!pending) return false;
+  if (pending.status === "superseded") {
+    await outbox.sendText(chat.chatId, "Kode itu untuk versi lama yang sudah saya ganti, jadi tidak saya jalankan. Pakai kode di pratinjau terbaru.");
+    return true;
+  }
   const finish = (status: string, result: string) => db.prepare("UPDATE hevy_pending SET status = ?, result = ? WHERE id = ?").run(status, result, pending.id);
   if (Date.now() - pending.created_at > CONFIRM_MINUTES * 60_000) {
     finish("expired", "The confirmation code expired before it was used.");
@@ -1009,24 +1030,26 @@ export async function confirmHevy(chat: ChatContext, text: string, outbox: Outbo
   }
   finish("running", "");
   await outbox.typing(chat.chatId);
+  let result: { text: string; detail?: string };
   try {
     const tool = TOOLS.find((t) => t.name === pending.tool);
     if (!tool || !isWriter(tool)) throw new Error("That action no longer exists.");
-    const result = await tool.apply(JSON.parse(pending.plan), { number: chat.sender.number, chatId: chat.chatId });
+    result = await tool.apply(JSON.parse(pending.plan), { number: chat.sender.number, chatId: chat.chatId });
     finish("done", [result.text, result.detail].filter(Boolean).join(" — "));
-    await outbox.sendText(chat.chatId, `✅ ${result.text}`);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     finish("failed", message);
     await outbox.sendText(chat.chatId, `❌ Hevy tidak menyimpan itu: ${message}`);
+    return true;
   }
+  await outbox.sendText(chat.chatId, `✅ ${result.text}`);
   return true;
 }
 
 /** What happened to changes Claude proposed in this chat since its last turn, so it knows on the next message. */
 export function hevyNotes(chat: ChatContext): string | undefined {
   const rows = db
-    .prepare("SELECT id, tool, summary, status, result FROM hevy_pending WHERE chat_id = ? AND noted = 0 AND status NOT IN ('pending', 'running')")
+    .prepare("SELECT id, tool, summary, status, result FROM hevy_pending WHERE chat_id = ? AND noted = 0 AND status NOT IN ('pending', 'running', 'superseded')")
     .all(chat.chatId) as { id: number; tool: string; summary: string; status: string; result: string | null }[];
   if (rows.length === 0) return undefined;
   db.prepare(`UPDATE hevy_pending SET noted = 1 WHERE id IN (${rows.map(() => "?").join(",")})`).run(...rows.map((r) => r.id));

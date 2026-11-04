@@ -541,8 +541,8 @@ export async function confirmGoogle(chat: ChatContext, text: string, outbox: Out
   const match = googleAllowed(chat) ? CONFIRM.exec(text) : null;
   if (!match) return false;
   const pending = db
-    .prepare("SELECT id, tool, input, created_at FROM google_pending WHERE chat_id = ? AND number = ? AND code = ? AND status = 'pending' ORDER BY id DESC LIMIT 1")
-    .get(chat.chatId, chat.sender.number, match[1]) as Pending | undefined;
+    .prepare("SELECT id, tool, input, created_at FROM google_pending WHERE chat_id = ? AND number = ? AND code = ? AND status = 'pending' AND created_at > ? ORDER BY id DESC LIMIT 1")
+    .get(chat.chatId, chat.sender.number, match[1], Date.now() - 86_400_000) as Pending | undefined;
   if (!pending) return false;
   const finish = (status: string, result: string) => db.prepare("UPDATE google_pending SET status = ?, result = ? WHERE id = ?").run(status, result, pending.id);
   if (Date.now() - pending.created_at > CONFIRM_MINUTES * 60_000) {

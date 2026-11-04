@@ -14,7 +14,7 @@ import { currentModel, FAMILIES, isFamily, latestModel, setModel } from "./model
 import { confirmErrand, errandFor, errandIncoming, errandNotes } from "./errands.js";
 import { connectMessage, disconnect, googleAccount, googleAllowed, googleEnabled, youtubeMessage } from "./google.js";
 import { confirmGoogle, googleNotes } from "./googleapps.js";
-import { connectHevy, connectMessage as hevyConnectMessage, disconnectHevy, hevyAccount, hevyAllowed, hevyEnabled, HevyError, isAwaitedKey, isKeyShaped, KEY_PAGE } from "./hevy.js";
+import { connectHevy, connectMessage as hevyConnectMessage, disconnectHevy, hevyAccount, hevyAllowed, hevyEnabled, HevyError, isBareKey, isKeyShaped, KEY_PAGE } from "./hevy.js";
 import { confirmHevy, hevyNotes } from "./hevyapps.js";
 import { actionNotes, confirmAction } from "./onehub.js";
 import { EVERYWHERE, isPaused, parseDuration, pause, resume } from "./pause.js";
@@ -95,8 +95,8 @@ async function processMessage(msg: Incoming, outbox: Outbox): Promise<void> {
   if (chat.isGroup && config.GROUP_ACCESS === "contacts" && !chat.sender.isContact) return;
 
   if (msg.text.startsWith("/") && (await runCommand(msg, outbox))) return;
-  // A Hevy key pasted on its own right after /hevy: treated as `/hevy <key>`, so it never reaches Claude.
-  if (isAwaitedKey(chat, msg.text)) return linkHevy(chat, msg.text.trim(), (text) => outbox.sendText(chat.chatId, text, chat.replyTo));
+  // A Hevy key pasted on its own: treated as `/hevy <key>`, so it never reaches Claude.
+  if (isBareKey(chat, msg.text)) return linkHevy(chat, msg.text.trim(), (text) => outbox.sendText(chat.chatId, text, chat.replyTo));
   if (await confirmErrand(chat, msg.text, outbox)) return;
   if (await confirmGoogle(chat, msg.text, outbox)) return;
   if (await confirmHevy(chat, msg.text, outbox)) return;
@@ -211,14 +211,17 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
       return true;
     }
     case "/hevy": {
-      if (!hevyEnabled) return false;
+      // Always handled here, even when Hevy is off, so a key typed after /hevy never reaches Claude.
       const sub = args[0];
+      if (!hevyEnabled) {
+        await reply("Hevy belum diaktifkan di Friday ini.");
+        return true;
+      }
       if (!hevyAllowed(chat)) {
-        await reply(
-          sub && isKeyShaped(sub)
-            ? `⚠️ Jangan kirim API key di grup, semua anggota bisa membacanya. Buat key baru di ${KEY_PAGE} supaya yang ini tidak berlaku, lalu kirim /hevy <api key> di chat pribadi dengan saya.`
-            : "Hevy hanya bisa dihubungkan dan dipakai di chat pribadi dengan saya.",
-        );
+        // Not quoted: a quote would keep the key on screen after they delete their message.
+        if (sub && isKeyShaped(sub)) {
+          await outbox.sendText(chat.chatId, `⚠️ Jangan kirim API key di grup, semua anggota bisa membacanya. Hapus pesannya, buat key baru di ${KEY_PAGE} supaya yang ini tidak berlaku, lalu kirim /hevy <api key> di chat pribadi dengan saya.`);
+        } else await reply("Hevy hanya bisa dihubungkan dan dipakai di chat pribadi dengan saya.");
         return true;
       }
       if (sub?.toLowerCase() === "putus") {
@@ -231,7 +234,7 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
         await linkHevy(chat, sub, reply);
       } else {
         const account = hevyAccount(chat.sender.number);
-        await reply(account ? `Hevy terhubung: *${account.name}*\nKirim /hevy putus untuk memutus.` : hevyConnectMessage(chat.sender.number, allContacts()[0]?.name ?? "admin"));
+        await reply(account ? `Hevy terhubung: *${account.name}*\nKirim /hevy putus untuk memutus.` : hevyConnectMessage(allContacts()[0]?.name ?? "admin"));
       }
       return true;
     }
