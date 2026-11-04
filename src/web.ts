@@ -61,8 +61,8 @@ function privacyPage(): string {
 </ul>
 
 <h2>Data Hevy yang diakses</h2>
-<p>Hanya kalau kamu menghubungkan akun Hevy lewat /hevy dengan API key milikmu, ${bot} bisa membaca dan mencatat workout, rutinitas, latihan, dan ukuran tubuh (seperti berat badan) di akun Hevy itu, saat kamu memintanya di chat pribadi. Setiap perubahan baru dijalankan setelah kamu mengonfirmasinya dengan kode. ${bot} tidak memakai akun Hevy-mu di grup.</p>
-<p>Kalau kamu menerima ajakan workout bareng, selama sesi itu sesama anggota bisa mencatat dan melihat set yang dicatat untukmu, begitu juga anggota grup WhatsApp tempat sesi dimulai, seperti yang disebut di ajakannya. ${bot} memakai daftar latihan di Hevy-mu untuk mencocokkan nama latihan. Catatan itu baru masuk ke Hevy-mu setelah kamu mengonfirmasinya dengan kodemu sendiri.</p>
+<p>Hanya kalau kamu menghubungkan akun Hevy lewat /hevy dengan API key milikmu, ${bot} bisa membaca dan mencatat workout, rutinitas, latihan, dan ukuran tubuh (seperti berat badan) di akun Hevy itu, saat kamu memintanya di chat pribadi. Yang kamu minta langsung disimpan, dan kamu selalu dapat ringkasan apa yang tersimpan. ${bot} tidak memakai akun Hevy-mu di grup.</p>
+<p>Kalau kamu menerima ajakan workout bareng, selama sesi itu sesama anggota bisa mencatat dan melihat set yang dicatat untukmu, begitu juga anggota grup WhatsApp tempat sesi dimulai, seperti yang disebut di ajakannya. ${bot} memakai daftar latihan di Hevy-mu untuk mencocokkan nama latihan. Saat sesi selesai, catatan itu disimpan ke Hevy-mu dan kamu dapat ringkasannya.</p>
 
 <h2>Cara data dipakai</h2>
 <p>Data dipakai hanya untuk menjalankan permintaanmu. Setiap perubahan, seperti mengirim email atau mengubah acara, baru dijalankan setelah kamu mengonfirmasinya dengan kode. ${bot} tidak bekerja di grup untuk data Google.</p>

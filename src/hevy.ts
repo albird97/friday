@@ -115,7 +115,7 @@ export function connectMessage(adminName: string): string {
       "*Perlu kamu tahu:*",
       `- Data Hevy yang dibaca ${bot} dikirim ke Claude (Anthropic) untuk diproses, dan tersimpan sementara di riwayat chat di server yang dikelola ${adminName}.`,
       "- API key disimpan terenkripsi dan tidak pernah dikirim ke Claude.",
-      "- Setiap perubahan di Hevy harus kamu konfirmasi dengan kode.",
+      `- Yang kamu minta langsung disimpan, dan ${bot} selalu mengirim ringkasan persis apa yang tersimpan.`,
       "- Putuskan kapan saja dengan /hevy putus.",
     ].join("\n"),
     `Kebijakan privasi: ${config.PUBLIC_URL}/privacy`,
@@ -140,13 +140,12 @@ export async function connectHevy(number: string, chatId: string, apiKey: string
   return name;
 }
 
-/** Forgets the key, pending changes and the chat history that may hold Hevy data. Hevy has no way to revoke a key from here. */
+/** Forgets the key and the chat history that may hold Hevy data. Hevy has no way to revoke a key from here. */
 export function disconnectHevy(number: string, chatId: string): boolean {
   catalogs.delete(number);
   const gone = db.prepare("DELETE FROM hevy_accounts WHERE number = ?").run(number).changes > 0;
   if (!gone) return false;
   db.prepare("DELETE FROM sessions WHERE chat_id = ?").run(chatId);
-  db.prepare("DELETE FROM hevy_pending WHERE number = ?").run(number);
   db.prepare("DELETE FROM hevy_privacy WHERE number = ?").run(number);
   return true;
 }

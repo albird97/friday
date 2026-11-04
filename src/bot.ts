@@ -15,8 +15,7 @@ import { confirmErrand, errandFor, errandIncoming, errandNotes } from "./errands
 import { connectMessage, disconnect, googleAccount, googleAllowed, googleEnabled, youtubeMessage } from "./google.js";
 import { confirmGoogle, googleNotes } from "./googleapps.js";
 import { connectHevy, connectMessage as hevyConnectMessage, disconnectHevy, hevyAccount, hevyAllowed, hevyEnabled, HevyError, isBareKey, isKeyShaped, KEY_PAGE } from "./hevy.js";
-import { confirmHevy, hevyNotes } from "./hevyapps.js";
-import { confirmGroupInvite, groupWorkoutNote, leaveGroupWorkouts } from "./groupworkout.js";
+import { answerGroupInvite, groupWorkoutNote, leaveGroupWorkouts } from "./groupworkout.js";
 import { actionNotes, confirmAction } from "./onehub.js";
 import { EVERYWHERE, isPaused, parseDuration, pause, resume } from "./pause.js";
 import { deleteSession, expireChatSessions, expireSession } from "./session.js";
@@ -100,8 +99,7 @@ async function processMessage(msg: Incoming, outbox: Outbox): Promise<void> {
   if (isBareKey(chat, msg.text)) return linkHevy(chat, msg.text.trim(), (text) => outbox.sendText(chat.chatId, text, chat.replyTo));
   if (await confirmErrand(chat, msg.text, outbox)) return;
   if (await confirmGoogle(chat, msg.text, outbox)) return;
-  if (await confirmHevy(chat, msg.text, outbox)) return;
-  if (await confirmGroupInvite(chat, msg.text, outbox)) return;
+  if (await answerGroupInvite(chat, msg.text, outbox)) return;
   if (await confirmAction(chat, msg.text, outbox)) return;
 
   if (!takeDailyQuota(chat.sender.number)) {
@@ -111,7 +109,7 @@ async function processMessage(msg: Incoming, outbox: Outbox): Promise<void> {
 
   const content = await toContent(msg);
   if (!content) return;
-  for (const notes of [errandNotes(chat), actionNotes(chat), googleNotes(chat), hevyNotes(chat), groupWorkoutNote(chat)]) if (notes) content.unshift({ type: "text", text: notes });
+  for (const notes of [errandNotes(chat), actionNotes(chat), googleNotes(chat), groupWorkoutNote(chat)]) if (notes) content.unshift({ type: "text", text: notes });
   await respond(chat, content, outbox);
 }
 

@@ -1,19 +1,18 @@
-import { randomInt } from "node:crypto";
 import type { BetaToolUnion } from "@anthropic-ai/sdk/resources/beta/messages/messages.js";
 import { z } from "zod";
 import { config, type Contact } from "./config.js";
 import { findContact, isAdmin } from "./contacts.js";
 import { db } from "./db.js";
 import { exerciseCatalog, findExercises, hevyAccount, hevyEnabled, normalizeTitle } from "./hevy.js";
-import { checkSet, newExercise, proposeWorkout, setsText, workoutSet, type NewExercise, type SetInput } from "./hevyapps.js";
+import { checkSet, newExercise, OverlapError, saveWorkout, setsText, workoutSet, type NewExercise, type SetInput } from "./hevyapps.js";
 import { formatDateTime, fromLocal } from "./time.js";
 import type { ChatContext, Outbox } from "./types.js";
 
-// Group workouts: someone with Hevy invites other Friday contacts to train together. Each invitee joins by answering
-// a code in their own private chat, after being told who can log for them and who will see it. Once everyone has
-// joined, any member can log sets for any member, from their private chat or the WhatsApp group the session started
-// in. Sets are kept here, not in Hevy: at the end each member gets their own workout as a hevy_log_workout preview
-// and saves it into their own Hevy with their own code, so nothing reaches anyone's Hevy without them.
+// Group workouts: someone with Hevy invites other Friday contacts to train together. Each invitee joins by replying
+// "ikut" in their own private chat, after being told who can log for them, who will see it, and that it all goes into
+// their Hevy at the end. Once everyone has joined, any member can log sets for any member, from their private chat or
+// the WhatsApp group the session started in. Sets are kept here while it runs; when it ends, each member's workout is
+// saved into their own Hevy (as hevy_log_workout would) and they're sent what was saved.
 
 const INVITE_HOURS = 2;
 const IDLE_HOURS = 8;
@@ -21,7 +20,6 @@ const RESEND_HOURS = 24;
 const MAX_MEMBERS = 8;
 const HOUR = 3_600_000;
 const LB = 0.45359237;
-const CONFIRM = /^\s*(?:ya|yes)\s+(\d{4})\s*[.!]?\s*$/i;
 
 type Session = {
   id: number;
@@ -35,7 +33,7 @@ type Session = {
   created_at: number;
   updated_at: number;
 };
-type Member = { workout_id: number; number: string; name: string; status: "invited" | "joined" | "left"; code: string | null; invited_at: number; draft: string };
+type Member = { workout_id: number; number: string; name: string; status: "invited" | "joined" | "left"; invited_at: number; draft: string; saved: number };
 type Logged = { exercise_template_id?: string; new_exercise?: NewExercise; title: string; type?: string; sets: SetInput[]; by: string[] };
 
 const sessionById = (id: number) => db.prepare("SELECT * FROM group_workouts WHERE id = ?").get(id) as Session | undefined;
@@ -62,7 +60,7 @@ function sessionHere(chat: ChatContext): Session | undefined {
   return s && (!chat.isGroup || chat.chatId === s.chat_id) ? s : undefined;
 }
 
-/** A session this person finished lately, so they can ask for their workout again (codes only last 10 minutes). */
+/** A session this person finished lately, so they can have their workout saved again if it didn't go in. */
 function recentlyFinished(number: string): Session | undefined {
   return db
     .prepare("SELECT w.* FROM group_workouts w JOIN group_workout_members m ON m.workout_id = w.id WHERE m.number = ? AND m.status = 'joined' AND w.status = 'finished' AND w.finished_at > ? ORDER BY w.id DESC LIMIT 1")
@@ -97,7 +95,7 @@ function contactsNamed(list: string[], sender: ChatContext["sender"]): Contact[]
   return [...found.values()];
 }
 
-function inviteText(s: Session, host: string, others: string[], code: string, linked: boolean): string {
+function inviteText(s: Session, host: string, others: string[], linked: boolean): string {
   const where = s.chat_id ? ` di grup *${s.chat_name}*` : "";
   return [
     "🏋️ *Ajakan workout bareng*",
@@ -105,10 +103,10 @@ function inviteText(s: Session, host: string, others: string[], code: string, li
     [
       "*Kalau ikut, selama sesi ini:*",
       `- Sesama anggota (${others.join(", ")}) bisa mencatat set untukmu dan melihat catatanmu${s.chat_id ? `, dan catatannya terlihat oleh semua anggota grup *${s.chat_name}*` : ""}.`,
-      "- Di akhir sesi kamu dapat ringkasan workout-mu sendiri. Baru masuk ke Hevy-mu kalau kamu konfirmasi dengan kode.",
+      "- Saat sesi selesai, workout-mu langsung disimpan ke Hevy-mu, dan kamu dapat ringkasannya.",
     ].join("\n"),
-    ...(linked ? [] : ["Kamu perlu Hevy dulu: kirim /hevy untuk menghubungkannya, lalu balas kode di bawah."]),
-    `Balas *YA ${code}* dalam ${INVITE_HOURS} jam untuk ikut. Abaikan pesan ini untuk menolak.`,
+    ...(linked ? [] : ["Kamu perlu Hevy dulu: kirim /hevy untuk menghubungkannya."]),
+    `Balas *ikut* dalam ${INVITE_HOURS} jam untuk bergabung, atau *gak ikut* kalau tidak bisa.`,
   ].join("\n\n");
 }
 
@@ -118,14 +116,13 @@ async function sendInvites(s: Session, contacts: Contact[], outbox: Outbox): Pro
   if (current.length + fresh.length > MAX_MEMBERS) throw new Error(`A group workout has at most ${MAX_MEMBERS} people.`);
   const now = Date.now();
   for (const c of fresh) {
-    db.prepare("INSERT OR REPLACE INTO group_workout_members (workout_id, number, name, status, code, invited_at, draft) VALUES (?, ?, ?, 'invited', ?, ?, '[]')").run(s.id, c.number, c.name, String(randomInt(1000, 10_000)), now);
+    db.prepare("INSERT OR REPLACE INTO group_workout_members (workout_id, number, name, status, invited_at, draft, saved) VALUES (?, ?, ?, 'invited', ?, '[]', 0)").run(s.id, c.number, c.name, now);
   }
   const all = membersOf(s.id);
   const host = hostOf(s);
   for (const c of fresh) {
-    const m = all.find((x) => x.number === c.number)!;
     const others = all.filter((x) => x.number !== c.number).map((x) => x.name);
-    await outbox.sendText(outbox.chatIdFor(c.number), inviteText(s, host, others, m.code!, Boolean(hevyAccount(c.number))));
+    await outbox.sendText(outbox.chatIdFor(c.number), inviteText(s, host, others, Boolean(hevyAccount(c.number))));
   }
   touch(s.id);
   return fresh.map((c) => c.name);
@@ -143,21 +140,36 @@ async function startIfReady(id: number, outbox: Outbox): Promise<void> {
   await announce(s, `💪 Semua sudah ikut: ${names(joined)}. *${s.title}* dimulai!\nCatat set siapa saja ke saya, misalnya: "${example.name} squat 40 kg 3x10, aku 60 kg 3x8". Kalau sudah, bilang "selesai".`, outbox);
 }
 
+// Short replies to an invite. A message counts only while an invite is open, and only if it's nothing but these words.
+const JOIN = new Set(["ikut", "ikutan", "join", "gas", "ayo", "yuk", "bisa"]);
+const YES = new Set(["ya", "iya", "yes", "ok", "oke", "okay", "siap", "aku", "saya"]);
+const NO = new Set(["tidak", "nggak", "ngga", "enggak", "engga", "gak", "ga", "gk", "tdk", "ndak", "no"]);
+
+export function inviteAnswer(text: string): "join" | "decline" | undefined {
+  const words = text.toLowerCase().replace(/[^\p{L}\s]/gu, " ").split(/\s+/).filter(Boolean);
+  if (words.length === 0 || words.length > 4) return undefined;
+  const join = words.some((w) => JOIN.has(w));
+  if ((join && words.some((w) => NO.has(w))) || (words.length === 1 && (words[0] === "skip" || words[0] === "absen"))) return "decline";
+  if (join && words.every((w) => JOIN.has(w) || YES.has(w))) return "join";
+  return undefined;
+}
+
 /**
- * Handles "YA 1234" from someone invited to a group workout, in their private chat. True when the message was that
- * (handled here, never shown to Claude).
+ * Handles "ikut" or "gak ikut" from someone with an open group workout invite, in their private chat. True when the
+ * message was that (handled here, never shown to Claude).
  */
-export async function confirmGroupInvite(chat: ChatContext, text: string, outbox: Outbox): Promise<boolean> {
+export async function answerGroupInvite(chat: ChatContext, text: string, outbox: Outbox): Promise<boolean> {
   if (!hevyEnabled || chat.isGroup || !chat.sender.isContact) return false;
-  const match = CONFIRM.exec(text);
-  if (!match) return false;
+  const answer = inviteAnswer(text);
+  if (!answer) return false;
   const m = db
-    .prepare("SELECT * FROM group_workout_members WHERE number = ? AND code = ? AND status IN ('invited', 'left') AND invited_at > ? ORDER BY invited_at DESC LIMIT 1")
-    .get(chat.sender.number, match[1], Date.now() - RESEND_HOURS * HOUR) as Member | undefined;
+    .prepare("SELECT * FROM group_workout_members WHERE number = ? AND status IN ('invited', 'left') AND invited_at > ? ORDER BY invited_at DESC LIMIT 1")
+    .get(chat.sender.number, Date.now() - RESEND_HOURS * HOUR) as Member | undefined;
   if (!m) return false;
   const s = sessionById(m.workout_id)!;
   const reply = (t: string) => outbox.sendText(chat.chatId, t);
   if (m.status === "left") {
+    if (answer === "decline") return false; // nothing to answer
     await reply(`Kamu tidak lagi diajak di *${s.title}*, jadi tidak ada yang berubah.`);
     return true;
   }
@@ -165,20 +177,28 @@ export async function confirmGroupInvite(chat: ChatContext, text: string, outbox
     await reply("Workout bareng itu sudah selesai atau dibatalkan.");
     return true;
   }
+  if (answer === "decline") {
+    db.prepare("UPDATE group_workout_members SET status = 'left' WHERE workout_id = ? AND number = ?").run(s.id, m.number);
+    touch(s.id);
+    await reply(`Oke, kamu tidak ikut *${s.title}*.`);
+    await announce(s, `🙅 ${m.name} tidak ikut *${s.title}*.`, outbox, m.number);
+    await startIfReady(s.id, outbox);
+    return true;
+  }
   if (Date.now() - m.invited_at > INVITE_HOURS * HOUR) {
     await reply(`Ajakan itu sudah kedaluwarsa. Minta ${hostOf(s)} mengajakmu lagi.`);
     return true;
   }
   if (!hevyAccount(chat.sender.number)) {
-    await reply(`Hubungkan Hevy dulu: kirim /hevy, lalu balas *YA ${m.code}* lagi.`);
+    await reply("Hubungkan Hevy dulu: kirim /hevy, lalu balas *ikut* lagi.");
     return true;
   }
   const other = joinedSession(chat.sender.number);
   if (other && other.id !== s.id) {
-    await reply(`Kamu masih ikut workout bareng *${other.title}*. Selesaikan atau keluar dulu, lalu balas *YA ${m.code}* lagi.`);
+    await reply(`Kamu masih ikut workout bareng *${other.title}*. Selesaikan atau keluar dulu, lalu balas *ikut* lagi.`);
     return true;
   }
-  db.prepare("UPDATE group_workout_members SET status = 'joined', code = NULL WHERE workout_id = ? AND number = ?").run(s.id, m.number);
+  db.prepare("UPDATE group_workout_members SET status = 'joined' WHERE workout_id = ? AND number = ?").run(s.id, m.number);
   touch(s.id);
   const waiting = membersOf(s.id).filter((x) => x.status === "invited");
   const where = s.chat_id ? ` di sini atau di grup *${s.chat_name}*` : " di sini";
@@ -197,12 +217,13 @@ export async function confirmGroupInvite(chat: ChatContext, text: string, outbox
 
 // --- Finishing -----------------------------------------------------------------------------------------------------
 
-/** Sends one member their workout from the session, to save into their own Hevy. */
-async function offerWorkout(s: Session, m: Member, outbox: Outbox): Promise<string> {
+/** Saves one member's workout from the session into their own Hevy, and tells them. */
+async function saveFor(s: Session, m: Member, outbox: Outbox, evenIfOverlapping = false): Promise<string> {
+  if (m.saved) return `${m.name}: already in their Hevy`;
   const draft = draftOf(m);
   const chatId = outbox.chatIdFor(m.number);
   if (draft.length === 0) {
-    await outbox.sendText(chatId, `🏁 *${s.title}* selesai. Tidak ada set yang tercatat untukmu, jadi tidak ada yang disimpan ke Hevy.`);
+    await outbox.sendText(chatId, `🏁 *${s.title}* selesai. Tidak ada set yang tercatat untukmu, jadi Hevy-mu tidak berubah.`);
     return `${m.name}: nothing logged`;
   }
   const others = membersOf(s.id).filter((x) => x.status === "joined" && x.number !== m.number).map((x) => x.name);
@@ -213,14 +234,20 @@ async function offerWorkout(s: Session, m: Member, outbox: Outbox): Promise<stri
     end: new Date(Math.max(s.finished_at ?? Date.now(), start + 60_000)).toISOString(),
     description: others.length ? `Workout bareng ${others.join(", ")}` : undefined,
     exercises: draft.map((d) => ({ ...(d.exercise_template_id ? { exercise_template_id: d.exercise_template_id } : { new_exercise: d.new_exercise }), sets: d.sets })),
+    even_if_overlapping: evenIfOverlapping,
   };
   try {
-    await proposeWorkout({ number: m.number, chatId }, input, outbox, `🏁 *${s.title}* selesai! Ini catatanmu${others.length ? ` dari workout bareng ${others.join(", ")}` : ""}. Cek dulu sebelum disimpan ke Hevy-mu:`);
-    return `${m.name}: preview sent`;
+    await saveWorkout({ number: m.number, chatId }, input, outbox, `🏁 *${s.title}* selesai!${others.length ? ` Workout bareng ${others.join(", ")}.` : ""}`);
+    db.prepare("UPDATE group_workout_members SET saved = 1 WHERE workout_id = ? AND number = ?").run(s.id, m.number);
+    return `${m.name}: saved in their Hevy`;
   } catch (err) {
+    if (err instanceof OverlapError) {
+      await outbox.sendText(chatId, `🏁 *${s.title}* selesai, tapi di Hevy-mu sudah ada *${err.title}* di jam yang sama, jadi tidak saya simpan supaya tidak dobel. Kalau itu workout lain, bilang "simpan workout bareng tadi".`);
+      return `${m.name}: not saved, their Hevy already has "${err.title}" at that time`;
+    }
     const reason = err instanceof Error ? err.message : String(err);
-    await outbox.sendText(chatId, `🏁 *${s.title}* selesai, tapi catatanmu belum bisa disiapkan untuk Hevy (${reason}). Minta saya kirim ulang setelah beres.`).catch(() => {});
-    return `${m.name}: couldn't prepare it (${reason})`;
+    await outbox.sendText(chatId, `🏁 *${s.title}* selesai, tapi workout-mu belum tersimpan ke Hevy (${reason}). Bilang "simpan workout bareng tadi" untuk mencoba lagi.`).catch(() => {});
+    return `${m.name}: not saved (${reason})`;
   }
 }
 
@@ -246,9 +273,9 @@ const loggedExercise = z.object({
 const START = tool({
   name: "group_workout_start",
   description:
-    "Start a group workout: invite other Friday contacts by name to train together. Each gets a private invite and joins with a code. " +
-    "Once everyone has joined, members can log sets for each other with group_workout_log, and group_workout_finish sends each member " +
-    "their own workout to save into their own Hevy.",
+    "Start a group workout: invite other Friday contacts by name to train together. Each gets a private invite and joins by replying \"ikut\". " +
+    "Once everyone has joined, members can log sets for each other with group_workout_log, and group_workout_finish saves each member's " +
+    "workout into their own Hevy.",
   schema: z.object({
     title: z.string().min(1).max(100).describe('e.g. "Leg day bareng".'),
     invite: z.array(z.string().min(1).max(100)).min(1).max(MAX_MEMBERS - 1).describe("The names of the other people."),
@@ -267,7 +294,7 @@ const START = tool({
     );
     db.prepare("INSERT INTO group_workout_members (workout_id, number, name, status, invited_at) VALUES (?, ?, ?, 'joined', ?)").run(id, chat.sender.number, chat.sender.name, now);
     const invited = await sendInvites(sessionById(id)!, contacts, outbox);
-    return `Invites sent to ${invited.join(", ")}, each privately with a code; you'll be told as they join. Sets can be logged once everyone has joined. If someone isn't coming, the host can remove them with group_workout_members.`;
+    return `Invites sent to ${invited.join(", ")}, each privately; they join by replying "ikut", and you'll be told as they do. Sets can be logged once everyone has joined. If someone isn't coming, the host can remove them with group_workout_members.`;
   },
 });
 
@@ -373,25 +400,28 @@ const LIVE = [
   tool({
     name: "group_workout_finish",
     description:
-      "End the group workout for everyone: each member is sent their own workout privately, to save into their own Hevy with a code. " +
-      "After it ended, a member can call it again to get their own workout re-sent.",
-    schema: z.object({ end: z.string().optional().describe('Local end time if not now, "2026-11-04T19:30".') }),
-    async run({ end }, { chat, outbox }) {
+      "End the group workout for everyone: each member's workout is saved into their own Hevy and they're sent what was saved. " +
+      "Afterwards, a member whose workout didn't go in can call it again in their private chat to save theirs.",
+    schema: z.object({
+      end: z.string().optional().describe('Local end time if not now, "2026-11-04T19:30".'),
+      even_if_overlapping: z.boolean().optional().describe("Only when saving one member's again, after they said it's a different workout from the one already in their Hevy."),
+    }),
+    async run({ end, even_if_overlapping }, { chat, outbox }) {
       const s = sessionHere(chat);
       if (!s) {
         const past = !chat.isGroup && recentlyFinished(chat.sender.number);
         if (!past) throw new Error("They aren't in a group workout.");
         const me = membersOf(past.id).find((m) => m.number === chat.sender.number)!;
-        return `Re-sent: ${await offerWorkout(past, me, outbox)}.`;
+        return `${await saveFor(past, me, outbox, even_if_overlapping)}.`;
       }
       if (s.status !== "active") throw new Error(`It hasn't started: waiting for ${names(membersOf(s.id).filter((m) => m.status === "invited"))}. Remove them, or cancel.`);
       const finishedAt = Math.min(end ? fromLocal(end).getTime() : Date.now(), Date.now());
       db.prepare("UPDATE group_workouts SET status = 'finished', finished_at = ?, updated_at = ? WHERE id = ?").run(finishedAt, Date.now(), s.id);
       const done = sessionById(s.id)!;
-      await announce(done, `🏁 *${s.title}* selesai! Masing-masing saya kirimi catatannya di chat pribadi, untuk disimpan ke Hevy dengan kode sendiri.`, outbox);
+      if (done.chat_id) await outbox.sendText(done.chat_id, `🏁 *${s.title}* selesai! Workout masing-masing saya simpan ke Hevy-nya, ringkasannya di chat pribadi.`);
       const results: string[] = [];
-      for (const m of membersOf(s.id).filter((x) => x.status === "joined")) results.push(await offerWorkout(done, m, outbox));
-      return `Finished. ${results.join("; ")}. Nothing is in anyone's Hevy until they confirm their own code.`;
+      for (const m of membersOf(s.id).filter((x) => x.status === "joined")) results.push(await saveFor(done, m, outbox));
+      return `Finished. ${results.join("; ")}. Each member was sent their own summary privately.`;
     },
   }),
   tool({
@@ -445,5 +475,5 @@ export function groupWorkoutNote(chat: ChatContext): string | undefined {
 
 /** Takes someone out of every group workout, e.g. when they stop being a contact. */
 export function leaveGroupWorkouts(number: string): void {
-  db.prepare("UPDATE group_workout_members SET status = 'left', code = NULL WHERE number = ? AND status != 'left'").run(number);
+  db.prepare("UPDATE group_workout_members SET status = 'left' WHERE number = ? AND status != 'left'").run(number);
 }

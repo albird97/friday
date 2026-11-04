@@ -203,25 +203,26 @@ Then, in that private chat only:
 - **Log a workout** by typing it ("bench 80 kg 3x8, pull ups 3x10 tadi pagi"), in a voice note, or with a photo of a
   notebook page, a whiteboard, a treadmill screen or another app's summary. Friday reads every set, matches each
   exercise to the person's Hevy exercises (gym shorthand like "db", "rdl" or "lat pull down" included) and creates any
-  that don't exist yet as custom exercises, in the same confirmation. Weights in pounds are converted to kg.
+  that don't exist yet as custom exercises, in the same save. Weights in pounds are converted to kg.
 - **Fix a workout** (a set, the time, the title), **make routines** or a whole program in a folder, and **record body
   weight, body fat and sizes**.
 - **Ask about training**: what they did last week, an exercise's history with best weight and estimated 1RM, a
   monthly recap with sets per muscle, or what to lift next.
 - **Train together**: "ajak Sarah dan Budi workout bareng" (in a private chat or a WhatsApp group) invites other
-  Friday contacts. Each gets a private invite saying who can log for them and who will see it, and joins with a
-  `YA 1234` reply (anyone without Hevy is asked to `/hevy` first). Once everyone has joined, any member can log sets
+  Friday contacts. Each gets a private invite saying who can log for them, who will see it and that it goes into their
+  Hevy at the end, and answers `ikut` or `gak ikut` (anyone without Hevy is asked to `/hevy` first). Once everyone has joined, any member can log sets
   for any member, from the group the session started in or their own private chat ("Sarah squat 40 kg 3x10, aku
   60 kg 3x8"). Each exercise is matched against that member's own Hevy, and Friday asks when a name could be several.
   Someone whose sets are logged from another chat gets a private note. The host can invite more people, drop someone
-  who isn't coming (which starts it for the rest) or cancel. "Selesai" sends each member their own workout privately,
-  to save into their own Hevy with their own code, so nobody's Hevy changes without them. If a code runs out, they
-  can ask for theirs again within a day.
+  who isn't coming (which starts it for the rest) or cancel. "Selesai" saves each member's workout into their own Hevy
+  and sends them what was saved. If one can't be saved (a workout already at that time, or Hevy unreachable), that
+  member is told and can ask Friday to save it again within a day.
 
-Reading runs straight away. Every change gets a preview built by Friday's code from the exact plan (times in the
-person's timezone, every set, new exercises marked ✨, private or public) and runs only after a `YA 1234` reply, checked
-by code rather than by Claude. The preview also warns when a workout at the same time is already in Hevy. New
-workouts are private unless the person asks otherwise.
+Everything runs straight away, without confirmation codes. After each change Friday sends a summary built by its
+code from what was saved (times in the person's timezone, every set, new exercises marked ✨, private or public), so
+a misread photo shows at once and can be fixed by asking. Because Hevy's API can't delete, Friday won't save a workout
+at the same time as one already in Hevy until the person says it's a different one, and asks whether a workout it
+didn't save should be public before editing it. New workouts are private unless the person asks otherwise.
 
 Hevy's public API can't delete anything, edit or remove custom exercises, or rename folders, and it never says
 whether an existing workout is private (Friday remembers what it set and says when it doesn't know). Those things

@@ -1,4 +1,3 @@
-import { randomInt } from "node:crypto";
 import type { BetaToolUnion } from "@anthropic-ai/sdk/resources/beta/messages/messages.js";
 import { z } from "zod";
 import { config } from "./config.js";
@@ -7,13 +6,12 @@ import { exerciseCatalog, findExercises, forgetCatalog, hevy, hevyAccount, hevyA
 import { formatDateTime, fromLocal, localDay } from "./time.js";
 import type { ChatContext, Outbox } from "./types.js";
 
-// What Friday can do in someone's own Hevy. Reading runs straight away. Anything that changes Hevy only proposes:
-// the code below checks the input against their exercises, builds the preview from it (not from Claude's words) and
-// keeps that exact plan. It runs only when the person answers the one-time code, which this file checks. A misread
-// photo or a wrong guess is caught there, and Hevy's API has no delete, so a wrong save would have to be undone by hand.
+// What Friday can do in someone's own Hevy. Everything runs straight away, without a confirmation code. Before a change
+// the code below checks the input against their exercises and the kind of exercise, and afterwards it sends the person a
+// summary built from what was actually saved (not from Claude's words), so a misread photo or a wrong guess shows at once
+// and can be fixed. Hevy's API has no delete, so the two mistakes that can't be fixed from here are stopped first: a
+// workout at the same time as one already saved, and an edit that would change privacy Hevy doesn't reveal.
 
-const CONFIRM_MINUTES = 10;
-const CONFIRM = /^\s*(?:ya|yes)\s+(\d{4})\s*[.!]?\s*$/i;
 const MAX_CHARS = 20_000;
 const LB = 0.45359237;
 const DAY = 86_400_000;
@@ -79,7 +77,7 @@ const when = (startIso: string, endIso: string) => `${idDateTime.format(new Date
 const line = (text: string) => text.replace(/[\r\n]+/g, " ").trim();
 const clip = (text: string) => (text.length > MAX_CHARS ? `${text.slice(0, MAX_CHARS)}\n[…cut, ${text.length} characters in all]` : text);
 const plural = (n: number, word: string) => `${n} ${word}`;
-/** Joins preview lines, leaving out the parts a condition turned off. */
+/** Joins summary lines, leaving out the parts a condition turned off. */
 const joinLines = (parts: unknown[]) => parts.filter((p): p is string => typeof p === "string").join("\n");
 
 type SetLike = {
@@ -445,6 +443,19 @@ async function measurementOn(number: string, date: string): Promise<Measurement 
   }
 }
 
+/** A workout is already saved at that time, so saving this one may well be a second copy. */
+export class OverlapError extends Error {
+  constructor(
+    readonly title: string,
+    start: string,
+  ) {
+    super(
+      `Not saved: their Hevy already has "${title}" at that time (${formatDateTime(new Date(start))}). Ask whether this is the same workout; ` +
+        "if it's a different one, call again with even_if_overlapping: true. If it's the same, nothing needs saving.",
+    );
+  }
+}
+
 // --- The tools -----------------------------------------------------------------------------------------------------
 
 type Reader<S extends z.ZodObject = z.ZodObject> = { name: string; description: string; schema: S; read: (input: z.infer<S>, ctx: Ctx) => Promise<string> };
@@ -452,9 +463,9 @@ type Writer<S extends z.ZodObject = z.ZodObject, P = any> = {
   name: string;
   description: string;
   schema: S;
-  /** Checks the input and returns what to show and the exact plan to run once confirmed. */
-  prepare: (input: z.infer<S>, ctx: Ctx) => Promise<{ preview: string; plan: P; warning?: string }>;
-  /** Runs a confirmed plan. `text` goes to the person; `detail` only to Claude. */
+  /** Checks the input (throwing, with the reason, when it can't be saved) and returns the plan and its summary. */
+  prepare: (input: z.infer<S>, ctx: Ctx) => Promise<{ summary: string; plan: P }>;
+  /** Saves the plan. `text` heads the message to the person; `detail` goes only to Claude. */
   apply: (plan: P, ctx: Ctx) => Promise<{ text: string; detail?: string }>;
 };
 type Tool = Reader | Writer;
@@ -685,8 +696,8 @@ const WRITERS = [
   writer({
     name: "hevy_log_workout",
     description:
-      "Propose saving a finished workout to this person's Hevy, from what they told you, a voice note or a photo. Get exercise ids from hevy_find_exercises first. " +
-      "They get a preview to confirm with a code.",
+      "Save a finished workout to this person's Hevy, from what they told you, a voice note or a photo. Get exercise ids from hevy_find_exercises first. " +
+      "It's saved at once and they're sent a summary of exactly what was saved.",
     schema: z.object({
       title: z.string().min(1).max(100).describe('Short, e.g. "Push Day", "Lari pagi"; the routine name if they followed one.'),
       start: z.string().describe('Local start, "2026-11-04T07:00".'),
@@ -695,24 +706,17 @@ const WRITERS = [
       description: z.string().max(2000).optional(),
       is_private: z.boolean().optional().describe("Default true: only they see it. false shares it with their Hevy followers."),
       exercises: z.array(workoutExercise).min(1).max(40),
+      even_if_overlapping: z.boolean().optional().describe("Only after they said it's a different workout from the one already saved at that time."),
     }),
     async prepare(input, { number }) {
       const times = workoutTimes(input.start, input.end, input.duration_minutes);
       const exercises = await planExercises(number, input.exercises, false);
       const plan: WorkoutPlan = { title: line(input.title), description: input.description?.trim() || null, ...times, is_private: input.is_private ?? true, exercises };
-      const twin = await overlapping(number, times.start_time, times.end_time);
-      const preview = [
-        "🏋️ *Simpan workout ke Hevy*",
-        `*${plan.title}* · ${when(plan.start_time, plan.end_time)}`,
-        privacyText(plan.is_private),
-        plan.description && `_${line(plan.description)}_`,
-        "",
-        ...exerciseLines(exercises, false),
-        "",
-        `${plural(exercises.length, "latihan")}, ${plural(countSets(exercises), "set")}`,
-      ];
-      const warning = twin && `Sudah ada workout di jam yang sama: *${line(twin.title ?? "")}* (${when(twin.start_time, twin.end_time)}). Jangan konfirmasi kalau ini workout yang sama.`;
-      return { preview: joinLines(preview), plan, warning: warning || undefined };
+      // Hevy can't delete, so a second copy of a workout would stay: ask first.
+      const twin = input.even_if_overlapping ? undefined : await overlapping(number, times.start_time, times.end_time);
+      if (twin) throw new OverlapError(line(twin.title ?? "workout"), twin.start_time);
+      const summary = [`${when(plan.start_time, plan.end_time)} · ${privacyText(plan.is_private)}`, plan.description && `_${line(plan.description)}_`, "", ...exerciseLines(exercises, false)];
+      return { summary: joinLines(summary), plan };
     },
     async apply(plan: WorkoutPlan, { number }) {
       const made = await createMissing(number, plan.exercises);
@@ -729,7 +733,7 @@ const WRITERS = [
   writer({
     name: "hevy_update_workout",
     description:
-      "Propose changing a logged workout: title, time, description, privacy, or its exercises. To change any set, read it with hevy_get_workout " +
+      "Change a logged workout: title, time, description, privacy, or its exercises. To change any set, read it with hevy_get_workout " +
       "and pass the complete new exercises list (it replaces them all). Omit exercises to keep them.",
     schema: z.object({
       workout_id: z.string().min(1),
@@ -738,7 +742,7 @@ const WRITERS = [
       end: z.string().optional(),
       duration_minutes: z.number().int().min(1).max(720).optional(),
       description: z.string().max(2000).optional(),
-      is_private: z.boolean().optional().describe("Hevy's API demands it on every edit but never reveals the current value; ask if they care."),
+      is_private: z.boolean().optional().describe("Hevy's API demands it on every edit but doesn't reveal it; needed for workouts Friday didn't save."),
       exercises: z.array(workoutExercise).min(1).max(40).optional(),
     }),
     async prepare(input, { number }) {
@@ -751,7 +755,10 @@ const WRITERS = [
           ? workoutTimes(start, input.end ?? (input.duration_minutes ? undefined : new Date(fromLocal(start).getTime() + length).toISOString()), input.duration_minutes)
           : { start_time: isoSeconds(current.start_time), end_time: isoSeconds(current.end_time) };
       const known = knownPrivacy(number, current.id);
-      const isPrivate = input.is_private ?? known ?? true;
+      const isPrivate = input.is_private ?? known;
+      if (isPrivate === undefined) {
+        throw new Error("Not changed: Hevy doesn't say whether this workout is public or private, and every edit sets it. Ask them which it should be, then call again with is_private.");
+      }
       const exercises = input.exercises ? await planExercises(number, input.exercises, false) : null;
       const plan: WorkoutEdit = {
         workout_id: current.id,
@@ -762,17 +769,15 @@ const WRITERS = [
         exercises,
       };
       const timeChanged = times.start_time !== isoSeconds(current.start_time) || times.end_time !== isoSeconds(current.end_time);
-      const preview = [
-        "✏️ *Ubah workout di Hevy*",
-        `*${line(current.title ?? "")}* · ${when(current.start_time, current.end_time)}`,
-        "",
+      const summary = [
+        `Sebelumnya: *${line(current.title ?? "")}* · ${when(current.start_time, current.end_time)}`,
         plan.title !== current.title && `Judul baru: *${plan.title}*`,
         timeChanged && `Waktu baru: ${when(plan.start_time, plan.end_time)}`,
         input.description !== undefined && `Deskripsi baru: _${line(plan.description ?? "(kosong)")}_`,
-        `Privasi: ${privacyText(isPrivate)}${input.is_private === undefined && known === undefined ? "\n_Hevy tidak memberi tahu setelan lamanya; bilang kalau workout ini harus tetap publik._" : ""}`,
-        ...(exercises ? ["", "Latihan (menggantikan semua yang lama):", ...exerciseLines(exercises, false)] : []),
+        `Privasi: ${privacyText(isPrivate)}`,
+        ...(exercises ? ["", "Latihan sekarang:", ...exerciseLines(exercises, false)] : []),
       ];
-      return { preview: joinLines(preview), plan };
+      return { summary: joinLines(summary), plan };
     },
     async apply(plan: WorkoutEdit, { number }) {
       const made = plan.exercises ? await createMissing(number, plan.exercises) : [];
@@ -789,19 +794,17 @@ const WRITERS = [
   }),
   writer({
     name: "hevy_create_exercise",
-    description: "Propose adding a custom exercise to this person's Hevy, for one that isn't there (check hevy_find_exercises first). Logging a workout can do this by itself with new_exercise.",
+    description: "Add a custom exercise to this person's Hevy, for one that isn't there (check hevy_find_exercises first). Logging a workout can do this by itself with new_exercise.",
     schema: newExercise,
     async prepare(input, { number }) {
       const existing = (await exerciseCatalog(number)).find((t) => normalizeTitle(t.title) === normalizeTitle(input.title));
       if (existing) throw new Error(`"${existing.title}" already exists in their Hevy (id ${existing.id}).`);
-      const preview = [
-        "✨ *Buat latihan baru di Hevy*",
-        `*${line(input.title)}*`,
+      const summary = [
         `Jenis: ${TYPE_ID[input.exercise_type]}`,
         `Alat: ${EQUIPMENT_ID[input.equipment_category]}`,
         `Otot utama: ${MUSCLE_ID[input.muscle_group]}${input.other_muscles?.length ? `, lainnya: ${input.other_muscles.map((m) => MUSCLE_ID[m]).join(", ")}` : ""}`,
       ].join("\n");
-      return { preview, plan: input };
+      return { summary, plan: input };
     },
     async apply(plan: NewExercise, { number }) {
       const existing = (await exerciseCatalog(number, true)).find((t) => normalizeTitle(t.title) === normalizeTitle(plan.title));
@@ -813,7 +816,7 @@ const WRITERS = [
   writer({
     name: "hevy_create_routines",
     description:
-      "Propose new routines (workout plans they can start in the Hevy app), one or a whole program, optionally in a folder, with one confirmation. " +
+      "Create new routines (workout plans they can start in the Hevy app), one or a whole program, optionally in a folder, in one go. " +
       "Get exercise ids from hevy_find_exercises; use new_exercise only for what isn't there.",
     schema: z.object({
       folder_id: z.number().int().optional().describe("An existing folder, from hevy_routines."),
@@ -834,12 +837,11 @@ const WRITERS = [
       }
       const routines: RoutinePlan[] = [];
       for (const r of input.routines) routines.push({ title: line(r.title), notes: r.notes?.trim() || null, exercises: await planExercises(number, r.exercises, true) });
-      const preview = [
-        `📋 *Buat ${routines.length > 1 ? `${routines.length} rutinitas` : "rutinitas"} di Hevy*`,
+      const summary = [
         folder && `Folder: *${folder.title}*${folder.create ? " (baru)" : ""}`,
-        ...routines.flatMap((r) => ["", `*${r.title}*`, ...(r.notes ? [`_${line(r.notes)}_`] : []), ...exerciseLines(r.exercises, true)]),
+        ...routines.flatMap((r, i) => [...(i || folder ? [""] : []), `*${r.title}*`, ...(r.notes ? [`_${line(r.notes)}_`] : []), ...exerciseLines(r.exercises, true)]),
       ];
-      return { preview: joinLines(preview), plan: { folder, routines } };
+      return { summary: joinLines(summary), plan: { folder, routines } };
     },
     async apply(plan: RoutinesPlan, { number }) {
       let folderId = plan.folder?.id ?? null;
@@ -864,7 +866,7 @@ const WRITERS = [
   }),
   writer({
     name: "hevy_update_routine",
-    description: "Propose changing a routine. Read it with hevy_get_routine; exercises, if given, replace them all. Omit exercises to keep them.",
+    description: "Change a routine. Read it with hevy_get_routine; exercises, if given, replace them all. Omit exercises to keep them.",
     schema: z.object({
       routine_id: z.string().min(1),
       title: z.string().min(1).max(100).optional(),
@@ -877,14 +879,12 @@ const WRITERS = [
       if (!input.title && input.notes === undefined && !input.exercises) throw new Error("Nothing to change.");
       const exercises = input.exercises ? await planExercises(number, input.exercises, true) : null;
       const plan: RoutineEdit = { routine_id: current.id, title: input.title ? line(input.title) : (current.title ?? "Routine"), notes: input.notes === undefined ? undefined : input.notes.trim() || null, exercises };
-      const preview = [
-        "✏️ *Ubah rutinitas di Hevy*",
-        `*${line(current.title ?? "")}*`,
-        plan.title !== current.title && `Judul baru: *${plan.title}*`,
+      const summary = [
+        plan.title !== current.title && `Sebelumnya: *${line(current.title ?? "")}*`,
         input.notes !== undefined && `Catatan baru: _${line(plan.notes ?? "(kosong)")}_`,
-        ...(exercises ? ["", "Latihan (menggantikan semua yang lama):", ...exerciseLines(exercises, true)] : []),
+        ...(exercises ? [plan.title !== current.title || input.notes !== undefined ? "" : false, "Latihan sekarang:", ...exerciseLines(exercises, true)] : []),
       ];
-      return { preview: joinLines(preview), plan };
+      return { summary: joinLines(summary), plan };
     },
     async apply(plan: RoutineEdit, { number }) {
       const made = plan.exercises ? await createMissing(number, plan.exercises) : [];
@@ -899,7 +899,7 @@ const WRITERS = [
   }),
   writer({
     name: "hevy_log_measurements",
-    description: "Propose recording body weight, body fat or body sizes in this person's Hevy for a day. Values already saved that day and not given are kept.",
+    description: "Record body weight, body fat or body sizes in this person's Hevy for a day. Values already saved that day and not given are kept.",
     schema: z.object({
       date: day.optional().describe("Local day; default today."),
       weight_kg: z.number().min(20).max(400).optional(),
@@ -935,7 +935,7 @@ const WRITERS = [
         const before = existing?.[api];
         return `${label}: ${num(values[k]!, "id")} ${unit}${typeof before === "number" && before !== values[k] ? ` _(sebelumnya ${num(before, "id")} ${unit})_` : ""}`;
       });
-      return { preview: ["📏 *Catat ukuran tubuh di Hevy*", dateText(date), "", ...rows].join("\n"), plan: { date, values } };
+      return { summary: rows.join("\n"), plan: { date, values } };
     },
     async apply(plan: { date: string; values: Partial<Record<MeasureKey, number>> }, { number }) {
       const fields = Object.fromEntries((Object.keys(plan.values) as MeasureKey[]).map((k) => [MEASURES[k][0], plan.values[k]]));
@@ -972,87 +972,35 @@ export async function runHevyTool(name: string, input: unknown, chat: ChatContex
   if (!tool) throw new Error(`No Hevy tool called ${name}.`);
   const parsed = tool.schema.parse(input);
   const ctx = { number: chat.sender.number, chatId: chat.chatId };
-  return isWriter(tool) ? propose(tool, parsed, ctx, outbox) : tool.read(parsed, ctx);
+  return isWriter(tool) ? save(tool, parsed, ctx, outbox) : tool.read(parsed, ctx);
+}
+
+// --- Saving --------------------------------------------------------------------------------------------------------
+
+// One change at a time per person, so two saves Claude asks for at once can't both miss each other's workout.
+const queues = new Map<string, Promise<unknown>>();
+function oneAtATime<T>(number: string, work: () => Promise<T>): Promise<T> {
+  const run = (queues.get(number) ?? Promise.resolve()).catch(() => {}).then(work);
+  queues.set(number, run);
+  void run.finally(() => queues.get(number) === run && queues.delete(number)).catch(() => {});
+  return run;
+}
+
+/** Checks, saves and sends the person what was saved. Returns what Claude needs to know. */
+async function save(tool: Writer, input: unknown, target: Ctx, outbox: Outbox, intro?: string): Promise<string> {
+  const { summary, result } = await oneAtATime(target.number, async () => {
+    const { summary, plan } = await tool.prepare(input as never, target);
+    return { summary, result: await tool.apply(plan, target) };
+  });
+  await outbox.sendText(target.chatId, `${intro ? `${intro}\n\n` : ""}✅ ${result.text}${summary ? `\n\n${summary}` : ""}`);
+  return `Saved.${result.detail ? ` (${result.detail})` : ""} They were sent this summary, so don't repeat it; answer in one short line at most, mentioning anything you guessed.\n${result.text}\n${summary}`;
 }
 
 /**
- * Sends `number` (in their private chat `chatId`) the hevy_log_workout preview for `input`, to save into their own
- * Hevy with their own code. Group workouts use it, so nothing lands in someone's Hevy without them confirming it.
+ * Saves a workout into `target.number`'s own Hevy and tells them in `target.chatId`, as hevy_log_workout does. Group
+ * workouts use it at the end, for each member. Throws, saying why, when it can't be saved.
  */
-export async function proposeWorkout(target: Ctx, input: unknown, outbox: Outbox, intro?: string): Promise<string> {
+export function saveWorkout(target: Ctx, input: unknown, outbox: Outbox, intro?: string): Promise<string> {
   const tool = TOOLS.find((t) => t.name === "hevy_log_workout") as Writer;
-  return propose(tool, tool.schema.parse(input), target, outbox, intro);
-}
-
-// --- Confirming changes --------------------------------------------------------------------------------------------
-
-async function propose(tool: Writer, input: unknown, target: Ctx, outbox: Outbox, intro?: string): Promise<string> {
-  const { preview, plan, warning } = await tool.prepare(input as never, target);
-  const code = String(randomInt(1000, 10_000));
-  // A corrected proposal replaces the earlier one, so confirming both can't save the same thing twice.
-  db.prepare("UPDATE hevy_pending SET status = 'superseded' WHERE chat_id = ? AND number = ? AND tool = ? AND status = 'pending'").run(target.chatId, target.number, tool.name);
-  db.prepare("INSERT INTO hevy_pending (chat_id, number, code, tool, plan, summary, status, noted, created_at) VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?)").run(
-    target.chatId,
-    target.number,
-    code,
-    tool.name,
-    JSON.stringify(plan),
-    preview,
-    Date.now(),
-  );
-  await outbox.sendText(target.chatId, `${intro ? `${intro}\n\n` : ""}${preview}${warning ? `\n\n⚠️ ${warning}` : ""}\n\nBalas *YA ${code}* dalam ${CONFIRM_MINUTES} menit untuk menyimpan ke Hevy. Abaikan pesan ini untuk membatalkan.`);
-  return (
-    "Nothing is saved yet. They were sent this preview with a code, and it's saved only when they reply with that code. " +
-    `Don't repeat the preview or the code, and don't say it's saved; mention anything you weren't sure about.${warning ? `\nWarning shown to them: ${warning}` : ""}\nPreview:\n${preview}`
-  );
-}
-
-type Pending = { id: number; tool: string; plan: string; created_at: number };
-
-/** Handles "YA 1234" for a pending Hevy change. True when the message was that (handled here, never shown to Claude). */
-export async function confirmHevy(chat: ChatContext, text: string, outbox: Outbox): Promise<boolean> {
-  const match = hevyAllowed(chat) ? CONFIRM.exec(text) : null;
-  if (!match) return false;
-  // Codes older than a day are ignored rather than answered, so one can't swallow a fresh code from another feature.
-  const pending = db
-    .prepare("SELECT id, tool, plan, status, created_at FROM hevy_pending WHERE chat_id = ? AND number = ? AND code = ? AND status IN ('pending', 'superseded') AND created_at > ? ORDER BY id DESC LIMIT 1")
-    .get(chat.chatId, chat.sender.number, match[1], Date.now() - DAY) as (Pending & { status: string }) | undefined;
-  if (!pending) return false;
-  if (pending.status === "superseded") {
-    await outbox.sendText(chat.chatId, "Kode itu untuk versi lama yang sudah saya ganti, jadi tidak saya jalankan. Pakai kode di pratinjau terbaru.");
-    return true;
-  }
-  const finish = (status: string, result: string) => db.prepare("UPDATE hevy_pending SET status = ?, result = ? WHERE id = ?").run(status, result, pending.id);
-  if (Date.now() - pending.created_at > CONFIRM_MINUTES * 60_000) {
-    finish("expired", "The confirmation code expired before it was used.");
-    await outbox.sendText(chat.chatId, "Kode konfirmasi itu sudah kedaluwarsa, jadi belum ada yang tersimpan di Hevy. Minta ulang ke saya kalau masih perlu.");
-    return true;
-  }
-  finish("running", "");
-  await outbox.typing(chat.chatId);
-  let result: { text: string; detail?: string };
-  try {
-    const tool = TOOLS.find((t) => t.name === pending.tool);
-    if (!tool || !isWriter(tool)) throw new Error("That action no longer exists.");
-    result = await tool.apply(JSON.parse(pending.plan), { number: chat.sender.number, chatId: chat.chatId });
-    finish("done", [result.text, result.detail].filter(Boolean).join(" — "));
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    finish("failed", message);
-    await outbox.sendText(chat.chatId, `❌ Hevy tidak menyimpan itu: ${message}`);
-    return true;
-  }
-  await outbox.sendText(chat.chatId, `✅ ${result.text}`);
-  return true;
-}
-
-/** What happened to changes Claude proposed in this chat since its last turn, so it knows on the next message. */
-export function hevyNotes(chat: ChatContext): string | undefined {
-  const rows = db
-    .prepare("SELECT id, tool, summary, status, result FROM hevy_pending WHERE chat_id = ? AND noted = 0 AND status NOT IN ('pending', 'running', 'superseded')")
-    .all(chat.chatId) as { id: number; tool: string; summary: string; status: string; result: string | null }[];
-  if (rows.length === 0) return undefined;
-  db.prepare(`UPDATE hevy_pending SET noted = 1 WHERE id IN (${rows.map(() => "?").join(",")})`).run(...rows.map((r) => r.id));
-  const lines = rows.map((r) => `- ${r.tool} ("${r.summary.split("\n")[1] ?? r.summary.split("\n")[0]}"): ${r.status}${r.result ? ` — ${r.result}` : ""}`);
-  return `[System note — Hevy changes you proposed earlier:\n${lines.join("\n")}]`;
+  return save(tool, tool.schema.parse(input), target, outbox, intro);
 }

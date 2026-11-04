@@ -5,7 +5,7 @@ import { handleIncoming, type Incoming } from "../src/bot.js";
 import { db } from "../src/db.js";
 import { decrypt } from "../src/google.js";
 import { findExercises, forgetCatalog, matchScore } from "../src/hevy.js";
-import { confirmHevy, hevyNotes, hevyTools } from "../src/hevyapps.js";
+import { hevyTools } from "../src/hevyapps.js";
 import { buildSystemPrompt } from "../src/prompt.js";
 import { runTool } from "../src/tools.js";
 import type { ChatContext, Outbox } from "../src/types.js";
@@ -28,7 +28,6 @@ const groupOf = (who: { name: string; number: string }): ChatContext => ({ chatI
 const say = (chat: ChatContext, text: string) => handleIncoming({ chat, text, addressed: true } satisfies Incoming, outbox);
 const tool = (chat: ChatContext, name: string, input: unknown) => runTool(name, input, { chat, outbox });
 const last = () => sent.at(-1)!.text;
-const codeFromPreview = () => /YA (\d{4})/.exec(last())![1];
 const writes = () => hevyFake.calls.filter((c) => c.method !== "GET");
 const rows = (table: string, chatId?: string) =>
   (db.prepare(`SELECT COUNT(*) AS n FROM ${table}${chatId ? " WHERE chat_id = ?" : ""}`).get(...(chatId ? [chatId] : [])) as { n: number }).n;
@@ -38,7 +37,7 @@ async function link(who: { name: string; number: string }, key: string) {
 }
 
 beforeEach(() => {
-  for (const table of ["hevy_accounts", "hevy_pending", "hevy_privacy", "sessions"]) db.prepare(`DELETE FROM ${table}`).run();
+  for (const table of ["hevy_accounts", "hevy_privacy", "sessions"]) db.prepare(`DELETE FROM ${table}`).run();
   forgetCatalog(WIFE.number);
   forgetCatalog(ADMIN.number);
   resetHevy();
@@ -166,32 +165,16 @@ describe("logging a workout", () => {
     ],
   };
 
-  it("shows a preview and saves nothing until the code comes back", async () => {
+  it("saves at once, creating the new exercise first, in UTC and kilograms", async () => {
     await link(WIFE, KEYS.sarah);
     hevyFake.calls = [];
     const result = await tool(chatOf(WIFE), "hevy_log_workout", workout);
     assert.equal(result.isError, false, result.content);
-    assert.match(result.content, /Nothing is saved yet/);
-    assert.ok(!/YA \d{4}/.test(result.content), "Claude never sees the code");
-    assert.equal(writes().length, 0);
-    const preview = last();
-    assert.match(preview, /\*Push pagi\* · Rab, 28 Okt 2026, 07\.00–07\.50 \(50 mnt\)/);
-    assert.match(preview, /🔒 Privat/);
-    assert.match(preview, /\*Bench Press \(Barbell\)\*\n {3}40 kg × 10 \(pemanasan\), 2× 80 kg × 8, 80 kg × 7 @RPE 9/);
-    assert.match(preview, /\*Cable Fly Low to High\* ✨ _baru: beban & repetisi · mesin · dada_\n {3}2× 13,61 kg × 12/);
-    assert.match(preview, /\*Plank\*\n {3}1:00/);
-    assert.match(preview, /3 latihan, 7 set/);
-  });
-
-  it("creates the new exercise once, then the workout, in UTC and kilograms", async () => {
-    await link(WIFE, KEYS.sarah);
-    await tool(chatOf(WIFE), "hevy_log_workout", workout);
-    hevyFake.calls = [];
-    await say(chatOf(WIFE), `ya ${codeFromPreview()}`);
-    assert.match(last(), /✅ Workout tersimpan di Hevy: \*Push pagi\* \(3 latihan, 7 set\)\. Latihan baru: Cable Fly Low to High\./);
+    assert.match(result.content, /^Saved\. \(workout id w\d+\)/);
     const [template, saved] = writes();
     assert.equal(template.path, "/exercise_templates");
     assert.equal(saved.path, "/workouts");
+    assert.equal(writes().length, 2);
     const w = saved.body.workout;
     assert.equal(w.start_time, "2026-10-28T00:00:00Z");
     assert.equal(w.end_time, "2026-10-28T00:50:00Z");
@@ -199,12 +182,19 @@ describe("logging a workout", () => {
     assert.equal(w.exercises[1].exercise_template_id, hevyFake.accounts[KEYS.sarah].templates.at(-1)!.id);
     assert.equal(w.exercises[1].sets[0].weight_kg, 13.608);
     assert.deepEqual(w.exercises[0].sets[3], { type: "normal", weight_kg: 80, reps: 7, distance_meters: null, duration_seconds: null, custom_metric: null, rpe: 9 });
-    assert.equal(claude.requests.length, 0, "the confirmation never goes through Claude");
-    assert.match(hevyNotes(chatOf(WIFE))!, /hevy_log_workout .*: done — Workout tersimpan.*workout id w\d+/);
+    assert.equal(claude.requests.length, 0);
+  });
 
-    const used = /YA (\d{4})/.exec(sent.find((s) => s.text.includes("Balas *YA"))!.text)![1];
-    assert.equal(await confirmHevy(chatOf(WIFE), `YA ${used}`, outbox), false, "a code works once");
-    assert.equal(writes().length, 2);
+  it("sends the person exactly what was saved, built from the real input", async () => {
+    await link(WIFE, KEYS.sarah);
+    await tool(chatOf(WIFE), "hevy_log_workout", workout);
+    const summary = last();
+    assert.match(summary, /^✅ Workout tersimpan di Hevy: \*Push pagi\* \(3 latihan, 7 set\)\. Latihan baru: Cable Fly Low to High\./);
+    assert.match(summary, /Rab, 28 Okt 2026, 07\.00–07\.50 \(50 mnt\) · 🔒 Privat/);
+    assert.match(summary, /\*Bench Press \(Barbell\)\*\n {3}40 kg × 10 \(pemanasan\), 2× 80 kg × 8, 80 kg × 7 @RPE 9/);
+    assert.match(summary, /\*Cable Fly Low to High\* ✨ _baru: beban & repetisi · mesin · dada_\n {3}2× 13,61 kg × 12/);
+    assert.match(summary, /\*Plank\*\n {3}1:00/);
+    assert.ok(!/YA \d{4}/.test(summary), "no code to type");
   });
 
   it("refuses sets that don't fit the exercise, instead of dropping what they said", async () => {
@@ -218,7 +208,7 @@ describe("logging a workout", () => {
     const future = await tool(chatOf(WIFE), "hevy_log_workout", { ...workout, start: "2030-01-01T07:00" });
     assert.match(future.content, /future/);
     assert.equal(writes().length, 0);
-    assert.ok(!sent.some((s) => s.text.includes("Balas *YA")), "no preview for a bad plan");
+    assert.ok(!sent.some((s) => s.text.startsWith("✅ Workout")));
   });
 
   it("reuses an existing exercise rather than making a twin", async () => {
@@ -228,50 +218,38 @@ describe("logging a workout", () => {
       exercises: [{ new_exercise: { title: "bench press (barbell)", exercise_type: "weight_reps", equipment_category: "barbell", muscle_group: "chest" }, sets: [{ weight_kg: 60, reps: 5 }] }],
     });
     assert.doesNotMatch(last(), /✨/);
-    await say(chatOf(WIFE), `YA ${codeFromPreview()}`);
     assert.ok(!writes().some((c) => c.path === "/exercise_templates"));
     assert.equal(writes().at(-1)!.body.workout.exercises[0].exercise_template_id, "D04AC939");
   });
 
-  it("warns when a workout at the same time is already in Hevy", async () => {
+  it("won't save a second copy of a workout already in Hevy unless they say it's another one", async () => {
     await link(WIFE, KEYS.sarah);
     hevyFake.accounts[KEYS.sarah].workouts.push({ id: "old", title: "Chest day", start_time: "2026-10-28T00:10:00Z", end_time: "2026-10-28T01:00:00Z", exercises: [] });
-    await tool(chatOf(WIFE), "hevy_log_workout", workout);
-    assert.match(last(), /⚠️ Sudah ada workout di jam yang sama: \*Chest day\*/);
+    const refused = await tool(chatOf(WIFE), "hevy_log_workout", workout);
+    assert.equal(refused.isError, true);
+    assert.match(refused.content, /already has "Chest day" at that time/);
+    assert.equal(writes().length, 0);
+    const again = await tool(chatOf(WIFE), "hevy_log_workout", { ...workout, even_if_overlapping: true });
+    assert.equal(again.isError, false, again.content);
+    assert.equal(writes().filter((c) => c.path === "/workouts").length, 1);
   });
 
-  it("finds a workout already logged even when backfilling an old one", async () => {
+  it("finds that workout even when backfilling an old one", async () => {
     await link(WIFE, KEYS.sarah);
     for (let i = 0; i < 12; i++) {
       const start = Date.parse("2026-11-01T00:00:00Z") - i * 3_600_000 * 20;
       hevyFake.accounts[KEYS.sarah].workouts.push({ id: `recent${i}`, title: `Recent ${i}`, start_time: new Date(start).toISOString(), end_time: new Date(start + 3_600_000).toISOString(), exercises: [] });
     }
     hevyFake.accounts[KEYS.sarah].workouts.push({ id: "old", title: "Chest day", start_time: "2026-10-15T00:10:00Z", end_time: "2026-10-15T01:00:00Z", exercises: [] });
-    await tool(chatOf(WIFE), "hevy_log_workout", { ...workout, start: "2026-10-15T07:00" });
-    assert.match(last(), /⚠️ Sudah ada workout di jam yang sama: \*Chest day\*/);
+    const refused = await tool(chatOf(WIFE), "hevy_log_workout", { ...workout, start: "2026-10-15T07:00" });
+    assert.match(refused.content, /already has "Chest day"/);
   });
 
-  it("retires the old code when a corrected version is proposed", async () => {
+  it("saves one copy when the same workout is asked for twice at once", async () => {
     await link(WIFE, KEYS.sarah);
-    await tool(chatOf(WIFE), "hevy_log_workout", workout);
-    const first = codeFromPreview();
-    await tool(chatOf(WIFE), "hevy_log_workout", { ...workout, title: "Push pagi (fixed)" });
-    const second = codeFromPreview();
-    await say(chatOf(WIFE), `YA ${first}`);
-    assert.match(last(), /versi lama/);
-    assert.equal(writes().length, 0);
-    await say(chatOf(WIFE), `YA ${second}`);
+    const [a, b] = await Promise.all([tool(chatOf(WIFE), "hevy_log_workout", workout), tool(chatOf(WIFE), "hevy_log_workout", workout)]);
+    assert.deepEqual([a.isError, b.isError].sort(), [false, true]);
     assert.equal(writes().filter((c) => c.path === "/workouts").length, 1);
-    assert.equal(writes().find((c) => c.path === "/workouts")!.body.workout.title, "Push pagi (fixed)");
-  });
-
-  it("lets an expired code save nothing", async () => {
-    await link(WIFE, KEYS.sarah);
-    await tool(chatOf(WIFE), "hevy_log_workout", workout);
-    db.prepare("UPDATE hevy_pending SET created_at = ?").run(Date.now() - 11 * 60_000);
-    await say(chatOf(WIFE), `YA ${codeFromPreview()}`);
-    assert.match(last(), /kedaluwarsa/);
-    assert.equal(writes().length, 0);
   });
 });
 
@@ -287,57 +265,55 @@ describe("changing what's in Hevy", () => {
         { exercise_template_id: "ABCD0001", superset: 0, sets: [{ weight_kg: 12, reps: 12 }] },
       ],
     });
-    await say(chatOf(WIFE), `YA ${codeFromPreview()}`);
     return hevyFake.accounts[KEYS.sarah].workouts[0].id as string;
   }
 
   it("renames a workout and keeps its exercises, supersets and privacy", async () => {
     const id = await logged();
-    await tool(chatOf(WIFE), "hevy_update_workout", { workout_id: id, title: "Pull (back & biceps)" });
-    assert.match(last(), /Judul baru: \*Pull \(back & biceps\)\*/);
-    assert.doesNotMatch(last(), /Hevy tidak memberi tahu/, "Friday remembers the privacy it set");
-    await say(chatOf(WIFE), `YA ${codeFromPreview()}`);
+    const result = await tool(chatOf(WIFE), "hevy_update_workout", { workout_id: id, title: "Pull (back & biceps)" });
+    assert.equal(result.isError, false, result.content);
     const put = writes().at(-1)!;
     assert.equal(put.method, "PUT");
-    assert.equal(put.body.workout.is_private, true);
+    assert.equal(put.body.workout.is_private, true, "Friday remembers the privacy it set");
     assert.equal(put.body.workout.start_time, "2026-10-29T11:00:00Z");
     assert.deepEqual(put.body.workout.exercises.map((e: any) => [e.exercise_template_id, e.superset_id]), [["6A6C31A5", 0], ["ABCD0001", 0]]);
-    assert.match(last(), /✅ Workout diubah/);
+    assert.match(last(), /✅ Workout diubah di Hevy: \*Pull \(back & biceps\)\*\.\n\nSebelumnya: \*Pull\*/);
   });
 
-  it("says when it can't know a workout's privacy, since Hevy won't tell", async () => {
+  it("asks about privacy it can't know before editing a workout from the app", async () => {
     await link(WIFE, KEYS.sarah);
     hevyFake.accounts[KEYS.sarah].workouts.push({ id: "app1", title: "From the app", start_time: "2026-10-27T10:00:00Z", end_time: "2026-10-27T11:00:00Z", exercises: [] });
-    await tool(chatOf(WIFE), "hevy_update_workout", { workout_id: "app1", description: "Felt strong" });
-    assert.match(last(), /Hevy tidak memberi tahu setelan lamanya/);
+    const refused = await tool(chatOf(WIFE), "hevy_update_workout", { workout_id: "app1", description: "Felt strong" });
+    assert.equal(refused.isError, true);
+    assert.match(refused.content, /Ask them which it should be/);
+    assert.equal(writes().length, 0);
+    await tool(chatOf(WIFE), "hevy_update_workout", { workout_id: "app1", description: "Felt strong", is_private: false });
+    assert.equal(writes().at(-1)!.body.workout.is_private, false);
   });
 
-  it("builds a whole program in a new folder with one confirmation", async () => {
+  it("builds a whole program in a new folder in one go", async () => {
     await link(WIFE, KEYS.sarah);
     const day = (title: string) => ({ title, exercises: [{ exercise_template_id: "D04AC939", rest_seconds: 120, sets: [{ weight_kg: 60, rep_range: { start: 8, end: 10 } }, { weight_kg: 60, rep_range: { start: 8, end: 10 } }] }] });
     await tool(chatOf(WIFE), "hevy_create_routines", { new_folder: "PPL", routines: [day("Push A"), day("Push B")] });
-    assert.match(last(), /Folder: \*PPL\* \(baru\)/);
-    assert.match(last(), /2× 60 kg × 8–10 · istirahat 2:00/);
-    await say(chatOf(WIFE), `YA ${codeFromPreview()}`);
     const posted = writes();
     assert.deepEqual(posted.map((c) => c.path), ["/routine_folders", "/routines", "/routines"]);
     const folderId = hevyFake.accounts[KEYS.sarah].folders[0].id;
     assert.ok(posted.slice(1).every((c) => c.body.routine.folder_id === folderId));
     assert.deepEqual(posted[1].body.routine.exercises[0].sets[0].rep_range, { start: 8, end: 10 });
-    assert.match(last(), /Rutinitas dibuat di Hevy: \*Push A\*, \*Push B\* \(folder PPL\)/);
+    assert.match(last(), /✅ Rutinitas dibuat di Hevy: \*Push A\*, \*Push B\* \(folder PPL\)/);
+    assert.match(last(), /Folder: \*PPL\* \(baru\)/);
+    assert.match(last(), /2× 60 kg × 8–10 · istirahat 2:00/);
   });
 
   it("edits a routine without wiping its notes or sending empty rep ranges", async () => {
     await link(WIFE, KEYS.sarah);
     hevyFake.accounts[KEYS.sarah].routines.push({ id: "rA", title: "Push A", notes: "Slow eccentrics", folder_id: null, exercises: [{ title: "Bench Press (Barbell)", exercise_template_id: "D04AC939", supersets_id: null, rest_seconds: 90, sets: [{ type: "normal", reps: 8, weight_kg: 60 }] }] });
     await tool(chatOf(WIFE), "hevy_update_routine", { routine_id: "rA", title: "Push A (heavy)" });
-    await say(chatOf(WIFE), `YA ${codeFromPreview()}`);
     let put = writes().at(-1)!;
     assert.ok(!("notes" in put.body.routine), "notes Hevy didn't show us are left alone");
     assert.equal(put.body.routine.exercises[0].rest_seconds, 90);
 
     await tool(chatOf(WIFE), "hevy_update_routine", { routine_id: "rA", exercises: [{ exercise_template_id: "D04AC939", sets: [{ weight_kg: 62.5, reps: 8 }] }] });
-    await say(chatOf(WIFE), `YA ${codeFromPreview()}`);
     put = writes().at(-1)!;
     assert.match(last(), /✅ Rutinitas diubah/);
     assert.ok(!("rep_range" in put.body.routine.exercises[0].sets[0]));
@@ -348,13 +324,11 @@ describe("changing what's in Hevy", () => {
     hevyFake.accounts[KEYS.sarah].measurements.push({ date: "2026-11-01", weight_kg: 73, waist: 81 });
     await tool(chatOf(WIFE), "hevy_log_measurements", { date: "2026-11-01", weight_lb: 160 });
     assert.match(last(), /Berat: 72,57 kg _\(sebelumnya 73 kg\)_/);
-    await say(chatOf(WIFE), `YA ${codeFromPreview()}`);
     const put = writes().at(-1)!;
     assert.equal(put.method, "PUT");
     assert.deepEqual(put.body, { weight_kg: 72.57, waist: 81 });
 
     await tool(chatOf(WIFE), "hevy_log_measurements", { date: "2026-11-02", fat_percent: 18 });
-    await say(chatOf(WIFE), `YA ${codeFromPreview()}`);
     assert.deepEqual(writes().at(-1)!.body, { date: "2026-11-02", fat_percent: 18 });
   });
 });

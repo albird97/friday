@@ -175,19 +175,6 @@ db.exec(`
     api_key       TEXT NOT NULL,
     connected_at  INTEGER NOT NULL
   );
-  CREATE TABLE IF NOT EXISTS hevy_pending (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    chat_id    TEXT NOT NULL,
-    number     TEXT NOT NULL,
-    code       TEXT NOT NULL,
-    tool       TEXT NOT NULL,
-    plan       TEXT NOT NULL,
-    summary    TEXT NOT NULL,
-    status     TEXT NOT NULL,
-    result     TEXT,
-    noted      INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL
-  );
   -- Hevy's API never says whether a workout is private, but demands it on every edit. Friday remembers what it set.
   CREATE TABLE IF NOT EXISTS hevy_privacy (
     workout_id  TEXT PRIMARY KEY,
@@ -207,15 +194,15 @@ db.exec(`
     created_at  INTEGER NOT NULL,
     updated_at  INTEGER NOT NULL
   );
-  -- status: invited, joined or left. draft: the sets logged for this member, as JSON.
+  -- status: invited, joined or left. draft: the sets logged for this member, as JSON. saved: in their Hevy.
   CREATE TABLE IF NOT EXISTS group_workout_members (
     workout_id  INTEGER NOT NULL,
     number      TEXT NOT NULL,
     name        TEXT NOT NULL,
     status      TEXT NOT NULL,
-    code        TEXT,
     invited_at  INTEGER NOT NULL,
     draft       TEXT NOT NULL DEFAULT '[]',
+    saved       INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (workout_id, number)
   );
   CREATE TABLE IF NOT EXISTS chat_styles (

@@ -119,9 +119,9 @@
     "chat": "Friday",
     "thread": [
       { "from": "me", "kind": "text", "text": "Catat ke Hevy: bench press 80 kg 3x8 tadi pagi" },
-      { "from": "friday", "kind": "text", "text": "🏋️ Simpan ke Hevy: Push pagi, 07.00–07.30. Bench Press (Barbell) 3× 80 kg × 8. Balas YA 1234 untuk menyimpan." },
-      { "from": "me", "kind": "text", "text": "YA 1234" },
-      { "from": "friday", "kind": "text", "text": "✅ Workout tersimpan di Hevy: Push pagi (1 latihan, 3 set)." }
+      { "from": "friday", "kind": "text", "text": "✅ Workout tersimpan di Hevy: Push pagi (1 latihan, 3 set). Bench Press (Barbell) 3× 80 kg × 8, jam 07.00–07.30." },
+      { "from": "me", "kind": "text", "text": "Sore ini ajak Sarah workout bareng ya" },
+      { "from": "friday", "kind": "text", "text": "Ajakan terkirim ke Sarah. Begitu dia balas ikut, kalian bisa saling catat set." }
     ]
   }
 }
