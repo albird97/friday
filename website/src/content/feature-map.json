@@ -5,6 +5,7 @@
     "create_reminder": "friday-02",
     "list_reminders": "friday-02",
     "cancel_reminder": "friday-02",
+    "schedule_task": "friday-02",
     "create_document": "friday-03",
     "create_spreadsheet": "friday-03",
     "create_presentation": "friday-03",

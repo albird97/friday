@@ -1,4 +1,4 @@
-import { handleIncoming, idle } from "./bot.js";
+import { handleIncoming, idle, runScheduledTask } from "./bot.js";
 import { config } from "./config.js";
 import { imageProvider, pruneImages } from "./images.js";
 import { hideSignalSessionDumps } from "./logging.js";
@@ -24,7 +24,7 @@ console.log(
 );
 pruneImages();
 const outbox = await startWhatsApp((msg, out) => void handleIncoming(msg, out));
-startReminderLoop(outbox);
+startReminderLoop(outbox, undefined, (task) => runScheduledTask(task, outbox));
 if (config.PUBLIC_URL) startWeb(outbox);
 onUsageAlert(async (text) => {
   const admin = config.contacts[0];

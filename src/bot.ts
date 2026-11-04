@@ -20,6 +20,7 @@ import { cancelLink, connectMessage as shopeeConnectMessage, disconnectShopee, s
 import { connectMessage as spotifyConnectMessage, disconnectSpotify, share, sharesOf, spotifyAccount, spotifyAllowed, spotifyEnabled, unshare } from "./spotify.js";
 import { actionNotes, confirmAction } from "./onehub.js";
 import { EVERYWHERE, isPaused, parseDuration, pause, resume } from "./pause.js";
+import type { Reminder } from "./reminders.js";
 import { deleteSession, expireChatSessions, expireSession } from "./session.js";
 import { statusReport } from "./status.js";
 import { isStyle, setStyle, STYLES, styleOf } from "./styles.js";
@@ -69,6 +70,28 @@ export function handleIncoming(msg: Incoming, outbox: Outbox): Promise<void> {
   queues.set(chatId, next);
   void next.finally(() => queues.get(chatId) === next && queues.delete(chatId));
   return next;
+}
+
+/**
+ * A scheduled task comes due: Friday gets it as a message from the person who set it up, in the chat it runs in, so it
+ * goes through the same pause, limits and permissions as if they had typed it then. It never starts with "/", so it
+ * can't run a command. A task whose owner is no longer a contact stops.
+ */
+export function runScheduledTask(task: Reminder, outbox: Outbox): Promise<void> {
+  const owner = contactByNumber(task.created_by);
+  if (!owner) {
+    db.prepare("UPDATE reminders SET active = 0 WHERE id = ?").run(task.id);
+    return Promise.resolve();
+  }
+  const isGroup = task.chat_id.endsWith("@g.us");
+  return handleIncoming(
+    {
+      chat: { chatId: task.chat_id, isGroup, chatName: task.chat_name ?? owner.name, sender: { ...owner, isContact: true } },
+      text: `[Scheduled task #${task.id} that ${owner.name} set up, due now: ${task.text}]`,
+      addressed: true,
+    },
+    outbox,
+  );
 }
 
 async function processMessage(msg: Incoming, outbox: Outbox): Promise<void> {
@@ -378,7 +401,7 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
     case "/stop":
       if (!admin) return false;
       pause(EVERYWHERE, "Semua chat", null);
-      await toAdmin("⏸️ Friday berhenti membalas di semua chat (pribadi dan grup), termasuk balasan titip pesan. Pengingat tetap terkirim.\nKirim /lanjut untuk menyalakannya lagi.");
+      await toAdmin("⏸️ Friday berhenti membalas di semua chat (pribadi dan grup), termasuk balasan titip pesan dan tugas terjadwal. Pengingat dan pesan terjadwal tetap terkirim.\nKirim /lanjut untuk menyalakannya lagi.");
       return true;
     case "/lanjut":
       if (!admin) return false;

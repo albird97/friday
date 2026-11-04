@@ -7,8 +7,8 @@
   },
   {
     "id": "friday-02",
-    "name": "Pengingat",
-    "description": "Pengingat sekali atau berulang, untuk diri sendiri atau grup.\n\nContoh: \"Ingatkan aku bayar listrik tiap tanggal 25 jam 9 pagi.\"",
+    "name": "Pengingat & jadwal",
+    "description": "Pengingat, pesan, atau tugas terjadwal: sekali, tiap hari, atau jadwal sendiri, di chat pribadi maupun grup.\n\nContoh: \"Tiap Jumat jam 5 sore, kirim polling siapa yang ikut futsal.\"",
     "image": "02-pengingat.jpg"
   },
   {

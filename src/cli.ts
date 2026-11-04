@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline/promises";
-import { handleIncoming, type Media } from "./bot.js";
+import { handleIncoming, runScheduledTask, type Media } from "./bot.js";
 import { config } from "./config.js";
 import { isTerminalChat, startReminderLoop } from "./reminders.js";
 import type { Outbox } from "./types.js";
@@ -45,7 +45,7 @@ const MIME: Record<string, string> = {
   ".gif": "image/gif",
 };
 
-startReminderLoop(outbox, isTerminalChat);
+startReminderLoop(outbox, isTerminalChat, (task) => runScheduledTask(task, outbox));
 console.log(`Chatting with ${config.BOT_NAME} as ${me.name}. Ctrl+C to quit. /help for commands, /attach <file> [message] to send a file.\n`);
 
 const rl = readline.createInterface({ input: process.stdin, output: process.stdout });

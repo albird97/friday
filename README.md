@@ -6,6 +6,9 @@ and it can:
 - 💬 **Answer questions** and help with writing, planning, translating, maths… in any language
 - 🌐 **Search the web** for current info (news, weather, prices, opening hours) and read links you send
 - ⏰ **Set reminders** — one-off ("at 5pm") or repeating ("every weekday at 8"), for you or someone else
+- 🗓️ **Do things on a schedule**, in a private chat or a group: send a fixed message ("every morning say Selamat pagi
+  to the family group"), or have Friday act then ("every Friday at 5pm, a poll on who's coming to futsal", "every morning
+  at 6, today's news"). See [Schedules](#schedules)
 - 📄 **Make documents** and send them as files: PDF, Word, Excel, CSV, PowerPoint
 - 🎨 **Create and edit pictures** — "draw a birthday card", or send a photo and say "make the background a beach"
 - 👀 **Read photos, PDFs and text files** you send, and **understand voice notes** (transcribed for free with Cloudflare;
@@ -103,7 +106,27 @@ Things to try:
 - "Tell Sarah I'll be home at 8"
 - *(in a group)* "@Friday see who can come to dinner on Saturday at 7" — sends a poll; later "@Friday who's coming?"
 - *(admin only)* "Post in the Kongkow group: we meet at 7" — Friday posts it as itself
+- *(in a group)* "@Friday every Friday at 5pm make a poll on who's coming to futsal"
 - "Analisis BBCA harian dan buatkan trading plan", then "kenapa SL-nya di situ?"
+
+### Schedules
+
+Anyone in the contacts can set these up, in their private chat or in a group (where they run in that group):
+
+- **Reminders** arrive as "⏰ Reminder: …".
+- **Scheduled messages** go out exactly as written: "every morning at 6 send 'Selamat pagi semua ☀️'". They cost nothing
+  when they go out.
+- **Scheduled tasks** are instructions Friday carries out when they come due, as if the person who set them up had just
+  asked: "every Friday at 5pm, send a poll on who's coming to futsal", "every weekday at 7, a summary of today's news",
+  "on the 1st of every month, ask how much was spent on electricity". Each run is a Claude turn, so it costs like a
+  message and counts toward that person's daily limit. Tasks repeat at most hourly, with 10 per person at most.
+  They stop when their owner is removed, and they don't run while Friday is stopped (`/stop`).
+
+"What's scheduled?" lists them with their numbers; "cancel #12" stops one. The admin can also set them up for a group
+from their private chat: "every Monday at 8, post 'Jangan lupa setor laporan' in the Kantor group".
+
+A message or task that comes due more than an hour late, because Friday was offline, is skipped until its next time.
+Reminders are still sent late.
 
 ### Commands
 
@@ -127,7 +150,7 @@ Not listed in `/help` (admin only; answers always go to the admin's private chat
 | `/diam [30m \| 2j \| 1h]` | In a group: Friday ignores that group for a while (default 1 hour, at most 7 days; `h` = hari, days) |
 | `/bangun` | In a group: end its `/diam` early |
 | `/switch [semua] [opus \| sonnet \| haiku \| default]` | Change the Claude model of the chat it's sent in, private or group; `default` goes back to the model every chat uses. `/switch semua …` changes that default for every chat without its own choice. Always the family's newest version: Friday looks it up now and daily, and tells the admin when the default moves up. Each changed chat continues from a short recap. `/switch` alone shows the current model. People listed in `SWITCH_USERS` can use it in their own private chat |
-| `/stop` | Emergency stop: Friday ignores every chat (errand replies included) until `/lanjut`. Reminders still go out |
+| `/stop` | Emergency stop: Friday ignores every chat (errand replies included) and skips scheduled tasks until `/lanjut`. Reminders and scheduled messages still go out |
 | `/lanjut` | Undo `/stop` |
 | `/style [chill \| formal \| funny \| ngeyel \| normal]` | How Friday talks in this chat (group or private). `ngeyel` is devil's advocate: it argues against whatever is said, but still does tasks properly, never invents facts, answers in one voice (no separate "serious" part) and on health, safety, legal and money always argues for the careful side. Takes effect from the next message; `/style` alone shows the current one |
 | `/backup` | Send the admin a copy of Friday's database (contacts, memories, reminders, polls, conversations, usage; not the WhatsApp login) |

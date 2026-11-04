@@ -18,7 +18,7 @@ import { addMemory, forgetMemory, SHARED } from "./memory.js";
 import { onehubTools, runOnehubTool } from "./onehub.js";
 import { runSmartlifeTool, smartlifeTools } from "./smartlife.js";
 import { pollInChat, pollResults, savePoll } from "./polls.js";
-import { cancelReminder, createReminder, describeReminder, listReminders } from "./reminders.js";
+import { cancelReminder, createReminder, describeReminder, listReminders, MAX_TASKS } from "./reminders.js";
 import { formatDateTime } from "./time.js";
 import type { ChatContext, Outbox, OutgoingFile } from "./types.js";
 
@@ -46,6 +46,45 @@ function destination(ctx: ToolContext, contactName: string | undefined, action: 
   if (!contact) throw new Error(isAdmin(ctx.chat.sender.number) ? `"${contactName}" isn't a known contact.` : `Can't send to "${contactName}".`);
   return { chatId: ctx.outbox.chatIdFor(contact.number), label: contact.name };
 }
+
+/** A group the bot is in, by its name or part of it; only for the admin. */
+async function findGroup(ctx: ToolContext, group: string, action: string): Promise<{ id: string; name: string }> {
+  if (!isAdmin(ctx.chat.sender.number)) throw new Error(`Only the admin can ${action}.`);
+  if (!ctx.outbox.groups) throw new Error("Groups only work on WhatsApp.");
+  const groups = await ctx.outbox.groups();
+  const wanted = group.trim().toLowerCase();
+  const exact = groups.filter((g) => g.name.toLowerCase() === wanted);
+  const matches = exact.length ? exact : groups.filter((g) => g.name.toLowerCase().includes(wanted));
+  const names = (list: typeof groups) => list.map((g) => g.name).join(", ");
+  if (matches.length === 0) throw new Error(`I'm not in a group called "${group}". My groups: ${names(groups) || "(none)"}.`);
+  if (matches.length > 1) throw new Error(`"${group}" could be: ${names(matches)}. Ask which one.`);
+  return matches[0];
+}
+
+/** Where a schedule goes: this chat, a contact's private chat, or (admin) a group by name. */
+async function scheduleTarget(
+  ctx: ToolContext,
+  forContact: string | undefined,
+  inGroup: string | undefined,
+): Promise<{ chatId: string; label: string; chatName?: string }> {
+  if (forContact && inGroup) throw new Error("Give either for_contact or in_group, not both.");
+  if (!inGroup) return destination(ctx, forContact, "schedule things for other people");
+  const group = await findGroup(ctx, inGroup, "schedule things in other groups");
+  return group.id === ctx.chat.chatId ? { chatId: group.id, label: "this chat" } : { chatId: group.id, label: group.name, chatName: group.name };
+}
+
+const inGroup = z
+  .string()
+  .optional()
+  .describe("Admin only: the name (or part of it) of a group you're in, to schedule it there instead of the current chat.");
+
+const scheduleTimes = {
+  when: z.string().optional().describe('Local date-time to do it once, ISO format, e.g. "2026-10-29T17:00".'),
+  repeat_cron: z
+    .string()
+    .optional()
+    .describe('5-field cron in local time to repeat it, e.g. "0 8 * * *" = every day 08:00, "0 8 * * 1-5" = weekdays 08:00.'),
+};
 
 async function deliver(ctx: ToolContext, sendTo: string | undefined, file: OutgoingFile): Promise<string> {
   const to = destination(ctx, sendTo, "send files to other people");
@@ -147,28 +186,65 @@ const BASE_TOOLS: Tool[] = [
   tool({
     name: "create_reminder",
     description:
-      "Schedule a WhatsApp reminder. Give `when` for a one-off reminder, or `repeat_cron` for a repeating one. " +
+      "Schedule a WhatsApp reminder, or a message with fixed text sent exactly as written (as_message: greetings, " +
+      "announcements, a weekly \"don't forget the trash\"). Give `when` for a one-off, or `repeat_cron` to repeat. " +
       "All times are in the user's local timezone (shown in each message's timestamp). " +
-      "Reminders go to the current chat unless `for_contact` names someone else.",
+      "It goes to the current chat unless `for_contact` names someone else or the admin gives `in_group`. Costs nothing " +
+      "when it fires; for anything you'd have to think about or look up at that moment, use schedule_task.",
     schema: z.object({
-      text: z.string().min(1).describe("What to remind about, phrased as the reminder message itself."),
-      when: z.string().optional().describe('Local date-time for a one-off reminder, ISO format, e.g. "2026-10-29T17:00".'),
-      repeat_cron: z
-        .string()
-        .optional()
-        .describe('5-field cron in local time for repeating reminders, e.g. "0 8 * * 1-5" = weekdays 08:00.'),
-      for_contact: z.string().optional().describe("Name of a known contact to remind in their private chat."),
+      text: z.string().min(1).describe("What to remind about, phrased as the reminder message itself, or the whole message."),
+      ...scheduleTimes,
+      as_message: z.boolean().default(false).describe('Send the text as is, without the "⏰ Reminder:" label.'),
+      for_contact: z.string().optional().describe("Name of a known contact to send it to in their private chat."),
+      in_group: inGroup,
     }),
     async run(input, ctx) {
-      const to = destination(ctx, input.for_contact, "set reminders for other people");
-      const text = input.for_contact ? `${input.text} (from ${ctx.chat.sender.name})` : input.text;
-      const r = createReminder({ chatId: to.chatId, createdBy: ctx.chat.sender.number, text, when: input.when, cron: input.repeat_cron });
-      return `Created reminder ${describeReminder(r)}, delivered to ${to.label}.`;
+      const to = await scheduleTarget(ctx, input.for_contact, input.in_group);
+      const text = input.for_contact && !input.as_message ? `${input.text} (from ${ctx.chat.sender.name})` : input.text;
+      const r = createReminder({
+        chatId: to.chatId,
+        createdBy: ctx.chat.sender.number,
+        text,
+        when: input.when,
+        cron: input.repeat_cron,
+        kind: input.as_message ? "message" : "reminder",
+        chatName: to.chatName,
+      });
+      return `Created ${input.as_message ? "scheduled message" : "reminder"} ${describeReminder(r)}, delivered to ${to.label}.`;
+    },
+  }),
+  tool({
+    name: "schedule_task",
+    description:
+      "Have yourself do something at a set time or on a repeating schedule, when it needs you to act at that moment: " +
+      "send a poll (\"every Friday 17:00, a poll on who's coming to futsal\"), today's news, weather or prices, a fresh " +
+      "good-morning message, a summary of their calendar… When it comes due you get the instruction as a message in that " +
+      "chat and carry it out with your tools, as if they had just asked. Nobody is waiting then, so write the instruction " +
+      "complete: what to do, for whom, in which language. Each run costs Claude credit; for fixed text use " +
+      "create_reminder instead. Repeats at most once an hour, " + MAX_TASKS + " tasks per person.",
+    schema: z.object({
+      instruction: z.string().min(3).describe("What to do then, written as a complete request to yourself."),
+      ...scheduleTimes,
+      in_group: inGroup,
+    }),
+    async run(input, ctx) {
+      requireContact(ctx, "schedule tasks");
+      const to = await scheduleTarget(ctx, undefined, input.in_group);
+      const r = createReminder({
+        chatId: to.chatId,
+        createdBy: ctx.chat.sender.number,
+        text: input.instruction,
+        when: input.when,
+        cron: input.repeat_cron,
+        kind: "task",
+        chatName: to.chatName,
+      });
+      return `Scheduled ${describeReminder(r)}, to run in ${to.label}.`;
     },
   }),
   tool({
     name: "list_reminders",
-    description: "List upcoming reminders for this chat and those the current person created.",
+    description: "List upcoming reminders, scheduled messages and scheduled tasks for this chat and those the current person created.",
     schema: z.object({}),
     async run(_input, ctx) {
       const chats = [ctx.chat.chatId, ctx.outbox.chatIdFor(ctx.chat.sender.number)];
@@ -178,7 +254,7 @@ const BASE_TOOLS: Tool[] = [
   }),
   tool({
     name: "cancel_reminder",
-    description: "Cancel a reminder by its #id (get ids from list_reminders).",
+    description: "Cancel a reminder, scheduled message or scheduled task by its #id (get ids from list_reminders).",
     schema: z.object({ id: z.number().int() }),
     async run({ id }, ctx) {
       const chats = [ctx.chat.chatId, ctx.outbox.chatIdFor(ctx.chat.sender.number)];
@@ -406,16 +482,7 @@ const ADMIN_TOOLS: Tool[] = [
       text: z.string().min(1),
     }),
     async run({ group, text }, ctx) {
-      if (!isAdmin(ctx.chat.sender.number)) throw new Error("Only the admin can post in groups.");
-      if (!ctx.outbox.groups) throw new Error("Groups only work on WhatsApp.");
-      const groups = await ctx.outbox.groups();
-      const wanted = group.trim().toLowerCase();
-      const exact = groups.filter((g) => g.name.toLowerCase() === wanted);
-      const matches = exact.length ? exact : groups.filter((g) => g.name.toLowerCase().includes(wanted));
-      const names = (list: typeof groups) => list.map((g) => g.name).join(", ");
-      if (matches.length === 0) throw new Error(`I'm not in a group called "${group}". My groups: ${names(groups) || "(none)"}.`);
-      if (matches.length > 1) throw new Error(`"${group}" could be: ${names(matches)}. Ask which one.`);
-      const [target] = matches;
+      const target = await findGroup(ctx, group, "post in groups");
       if (target.id === ctx.chat.chatId) return "That's this chat; just reply normally.";
       await ctx.outbox.sendText(target.id, text);
       return `Posted in ${target.name} at ${formatDateTime(new Date())}.`;

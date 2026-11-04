@@ -19,7 +19,7 @@ export function welcomeMessage(name: string): string {
     "*Yang bisa saya bantu:*",
     feature("💬 *Tanya apa saja*", `"Ide menu makan malam untuk 4 orang dong"`),
     feature("🔎 *Cari info terbaru di internet*", `"Harga emas hari ini berapa?"`),
-    feature("⏰ *Pengingat, sekali atau berulang*", `"Ingatkan aku minum obat tiap hari jam 8 pagi"`),
+    feature("⏰ *Pengingat dan jadwal rutin*", `"Ingatkan aku minum obat tiap hari jam 8 pagi" atau "Tiap pagi jam 6 kirimkan ringkasan berita hari ini"`),
     feature("📷 *Baca foto dan file*", `Kirim foto atau PDF, lalu tulis "Ringkas isi surat ini"`),
     ...(transcriptionEnabled ? [feature("🎙️ *Mengerti voice note*", "Kirim voice note, nanti saya balas dengan teks")] : []),
     feature("📄 *Buat PDF, Word, Excel, dan PowerPoint*", `"Buatkan anggaran belanja bulanan dalam Excel"`),
