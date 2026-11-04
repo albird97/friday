@@ -48,6 +48,7 @@ const Env = z.object({
   ACCESS_REQUEST_DAILY_LIMIT: z.coerce.number().int().min(0).default(20),
   // Google: each contact links their own account with /google. Client id and secret come from the Google Cloud project;
   // GOOGLE_TOKEN_KEY (64 hex characters, `openssl rand -hex 32`) encrypts their tokens. All empty = Google is off.
+  // The same key encrypts Hevy API keys: with it set, anyone can link their Hevy with /hevy (no other setting needed).
   GOOGLE_CLIENT_ID: z.string().default(""),
   GOOGLE_CLIENT_SECRET: z.string().default(""),
   GOOGLE_TOKEN_KEY: z.string().default(""),

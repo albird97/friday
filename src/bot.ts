@@ -14,6 +14,8 @@ import { currentModel, FAMILIES, isFamily, latestModel, setModel } from "./model
 import { confirmErrand, errandFor, errandIncoming, errandNotes } from "./errands.js";
 import { connectMessage, disconnect, googleAccount, googleAllowed, googleEnabled, youtubeMessage } from "./google.js";
 import { confirmGoogle, googleNotes } from "./googleapps.js";
+import { connectHevy, connectMessage as hevyConnectMessage, disconnectHevy, hevyAccount, hevyAllowed, hevyEnabled, HevyError, isAwaitedKey, isKeyShaped, KEY_PAGE } from "./hevy.js";
+import { confirmHevy, hevyNotes } from "./hevyapps.js";
 import { actionNotes, confirmAction } from "./onehub.js";
 import { EVERYWHERE, isPaused, parseDuration, pause, resume } from "./pause.js";
 import { deleteSession, expireChatSessions, expireSession } from "./session.js";
@@ -93,8 +95,11 @@ async function processMessage(msg: Incoming, outbox: Outbox): Promise<void> {
   if (chat.isGroup && config.GROUP_ACCESS === "contacts" && !chat.sender.isContact) return;
 
   if (msg.text.startsWith("/") && (await runCommand(msg, outbox))) return;
+  // A Hevy key pasted on its own right after /hevy: treated as `/hevy <key>`, so it never reaches Claude.
+  if (isAwaitedKey(chat, msg.text)) return linkHevy(chat, msg.text.trim(), (text) => outbox.sendText(chat.chatId, text, chat.replyTo));
   if (await confirmErrand(chat, msg.text, outbox)) return;
   if (await confirmGoogle(chat, msg.text, outbox)) return;
+  if (await confirmHevy(chat, msg.text, outbox)) return;
   if (await confirmAction(chat, msg.text, outbox)) return;
 
   if (!takeDailyQuota(chat.sender.number)) {
@@ -104,7 +109,7 @@ async function processMessage(msg: Incoming, outbox: Outbox): Promise<void> {
 
   const content = await toContent(msg);
   if (!content) return;
-  for (const notes of [errandNotes(chat), actionNotes(chat), googleNotes(chat)]) if (notes) content.unshift({ type: "text", text: notes });
+  for (const notes of [errandNotes(chat), actionNotes(chat), googleNotes(chat), hevyNotes(chat)]) if (notes) content.unshift({ type: "text", text: notes });
   await respond(chat, content, outbox);
 }
 
@@ -146,6 +151,7 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
           "/reset — start a fresh conversation (keeps memories and reminders)",
           "/id — show this chat's id and your number",
           ...(googleEnabled ? ["/google — hubungkan akun Google milikmu (/google youtube untuk YouTube, /google putus untuk memutus)"] : []),
+          ...(hevyEnabled ? ["/hevy — hubungkan Hevy untuk mencatat latihan gym (/hevy putus untuk memutus)"] : []),
           // The admin sees every command, the unlisted ones too, but only in their private chat.
           ...(admin && !chat.isGroup ? ["", ...ADMIN_HELP] : []),
         ].join("\n"),
@@ -201,6 +207,31 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
         await reply(`Akun Google terhubung: ${account.email}\nKirim /google youtube untuk menambah YouTube, atau /google putus untuk memutus semuanya.`);
       } else {
         await reply(connectMessage(chat.sender.number, allContacts()[0]?.name ?? "admin"));
+      }
+      return true;
+    }
+    case "/hevy": {
+      if (!hevyEnabled) return false;
+      const sub = args[0];
+      if (!hevyAllowed(chat)) {
+        await reply(
+          sub && isKeyShaped(sub)
+            ? `⚠️ Jangan kirim API key di grup, semua anggota bisa membacanya. Buat key baru di ${KEY_PAGE} supaya yang ini tidak berlaku, lalu kirim /hevy <api key> di chat pribadi dengan saya.`
+            : "Hevy hanya bisa dihubungkan dan dipakai di chat pribadi dengan saya.",
+        );
+        return true;
+      }
+      if (sub?.toLowerCase() === "putus") {
+        await reply(
+          disconnectHevy(chat.sender.number, chat.chatId)
+            ? `✅ Hevy diputus: API key dan riwayat chat ini dihapus dari server. Buat ulang API key di ${KEY_PAGE} kalau mau key lama tidak berlaku lagi.`
+            : "Belum ada akun Hevy yang terhubung.",
+        );
+      } else if (sub) {
+        await linkHevy(chat, sub, reply);
+      } else {
+        const account = hevyAccount(chat.sender.number);
+        await reply(account ? `Hevy terhubung: *${account.name}*\nKirim /hevy putus untuk memutus.` : hevyConnectMessage(chat.sender.number, allContacts()[0]?.name ?? "admin"));
       }
       return true;
     }
@@ -325,12 +356,36 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
     case "/remove": {
       if (!admin) return false;
       const result = removeContact(args.join(" "));
-      if (result.removed) await disconnect(result.removed.number, outbox.chatIdFor(result.removed.number));
+      if (result.removed) {
+        await disconnect(result.removed.number, outbox.chatIdFor(result.removed.number));
+        disconnectHevy(result.removed.number, outbox.chatIdFor(result.removed.number));
+      }
       await toAdmin(result.removed ? `Removed ${result.removed.name}.` : (result.error ?? "Couldn't remove that contact."));
       return true;
     }
     default:
       return false;
+  }
+}
+
+/** Checks a Hevy key and links it, answering in the chat. The key goes to Hevy and the database, never to Claude. */
+async function linkHevy(chat: ChatContext, key: string, reply: (text: string) => Promise<void>): Promise<void> {
+  if (!isKeyShaped(key)) {
+    await reply(`Itu bukan API key Hevy. Salin dari ${KEY_PAGE} lalu kirim: /hevy <api key>`);
+    return;
+  }
+  try {
+    const name = await connectHevy(chat.sender.number, chat.chatId, key);
+    await reply(
+      `✅ Hevy terhubung: *${name}*\nDemi keamanan, hapus pesan berisi API key tadi dari chat ini.\n\nCoba kirim foto catatan latihanmu, atau tulis: "Catat ke Hevy: tadi pagi bench press 80 kg 3x8"`,
+    );
+  } catch (err) {
+    const rejected = err instanceof HevyError && (err.status === 401 || err.status === 403);
+    await reply(
+      rejected
+        ? `API key itu ditolak Hevy. Salin key yang aktif dari ${KEY_PAGE} (perlu Hevy Pro), lalu kirim lagi: /hevy <api key>`
+        : "Hevy tidak bisa dihubungi sekarang, jadi belum terhubung. Coba lagi sebentar lagi.",
+    );
   }
 }
 

@@ -125,8 +125,8 @@ async function runTurn(session: Session, conv: Conversation): Promise<boolean> {
           };
         }
         const result = await conv.runTool(use.name, use.input);
-        // Someone's Google data stays out of the server logs, as the privacy policy says.
-        const detail = use.name.startsWith("google_") ? "" : `: ${result.content.slice(0, 200)}`;
+        // Someone's Google and Hevy data stays out of the server logs, as the privacy policy says.
+        const detail = /^(google|hevy)_/.test(use.name) ? "" : `: ${result.content.slice(0, 200)}`;
         console.log(`[${conv.label}] tool ${use.name}${result.isError ? " ERROR" : ""}${detail}`);
         return { type: "tool_result", tool_use_id: use.id, content: result.content, ...(result.isError && { is_error: true }) };
       }),

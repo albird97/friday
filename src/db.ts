@@ -169,6 +169,31 @@ db.exec(`
     noted      INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS hevy_accounts (
+    number        TEXT PRIMARY KEY,
+    name          TEXT NOT NULL,
+    api_key       TEXT NOT NULL,
+    connected_at  INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS hevy_pending (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id    TEXT NOT NULL,
+    number     TEXT NOT NULL,
+    code       TEXT NOT NULL,
+    tool       TEXT NOT NULL,
+    plan       TEXT NOT NULL,
+    summary    TEXT NOT NULL,
+    status     TEXT NOT NULL,
+    result     TEXT,
+    noted      INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+  -- Hevy's API never says whether a workout is private, but demands it on every edit. Friday remembers what it set.
+  CREATE TABLE IF NOT EXISTS hevy_privacy (
+    workout_id  TEXT PRIMARY KEY,
+    number      TEXT NOT NULL,
+    is_private  INTEGER NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS chat_styles (
     chat_id     TEXT PRIMARY KEY,
     chat_name   TEXT NOT NULL,

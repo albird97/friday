@@ -60,6 +60,9 @@ function privacyPage(): string {
   <li>Alamat email akun Google, untuk menunjukkan akun mana yang terhubung.</li>
 </ul>
 
+<h2>Data Hevy yang diakses</h2>
+<p>Hanya kalau kamu menghubungkan akun Hevy lewat /hevy dengan API key milikmu, ${bot} bisa membaca dan mencatat workout, rutinitas, latihan, dan ukuran tubuh (seperti berat badan) di akun Hevy itu, saat kamu memintanya di chat pribadi. Setiap perubahan baru dijalankan setelah kamu mengonfirmasinya dengan kode. ${bot} tidak bekerja di grup untuk data Hevy.</p>
+
 <h2>Cara data dipakai</h2>
 <p>Data dipakai hanya untuk menjalankan permintaanmu. Setiap perubahan, seperti mengirim email atau mengubah acara, baru dijalankan setelah kamu mengonfirmasinya dengan kode. ${bot} tidak bekerja di grup untuk data Google.</p>
 <p>${bot} tidak menjual data, tidak memakainya untuk iklan atau penilaian kredit, dan tidak memakainya untuk melatih model AI umum.</p>
@@ -68,11 +71,11 @@ function privacyPage(): string {
 <p>Dengan persetujuanmu, isi yang dibaca ${bot} dikirim ke Anthropic (Claude) untuk diproses, karena fitur ini tidak bisa berjalan tanpa itu. Balasan dan pesanmu terkirim lewat WhatsApp. Data tidak dibagikan ke pihak lain, kecuali diwajibkan hukum.</p>
 
 <h2>Penyimpanan dan keamanan</h2>
-<p>Token akses Google disimpan terenkripsi di server ${bot}, dan koneksi memakai HTTPS. Isi yang dibaca ${bot} tersimpan di riwayat chat di server yang sama, dan bisa ikut masuk ke cadangan harian.</p>
+<p>Token akses Google dan API key Hevy disimpan terenkripsi di server ${bot}, dan koneksi memakai HTTPS. API key Hevy tidak pernah dikirim ke Anthropic. Isi yang dibaca ${bot} tersimpan di riwayat chat di server yang sama, dan bisa ikut masuk ke cadangan harian.</p>
 <p>${admin} mengelola server itu, jadi secara teknis punya jalur ke data tersebut. ${admin} tidak membaca data Google pengguna, kecuali kamu memintanya, atau diperlukan untuk keamanan, perbaikan penyalahgunaan, atau kewajiban hukum.</p>
 
 <h2>Memutus akses dan menghapus data</h2>
-<p>Kirim /google putus ke ${bot} untuk mencabut akses, menghapus token, dan menghapus riwayat chat pribadimu di server. Kamu juga bisa mencabut akses di <a href="https://myaccount.google.com/permissions">pengaturan akun Google</a>. Salinan di cadangan terhapus saat cadangan lama dibersihkan.</p>
+<p>Kirim /google putus ke ${bot} untuk mencabut akses, menghapus token, dan menghapus riwayat chat pribadimu di server. Kamu juga bisa mencabut akses di <a href="https://myaccount.google.com/permissions">pengaturan akun Google</a>. Kirim /hevy putus untuk menghapus API key Hevy dan riwayat chat pribadimu di server; buat ulang API key di pengaturan Hevy kalau mau key lama tidak berlaku. Salinan di cadangan terhapus saat cadangan lama dibersihkan.</p>
 
 <h2>Kebijakan Google</h2>
 <p>Penggunaan dan pemindahan informasi yang diterima dari Google API mengikuti <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, termasuk ketentuan Limited Use.</p>

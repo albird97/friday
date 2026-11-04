@@ -64,5 +64,11 @@
     "name": "Akun Google",
     "description": "Hubungkan akun Google milikmu, lalu tanya jadwal, cari email, atau buat acara dari chat pribadi. Setiap perubahan dikonfirmasi dulu dengan kode.\n\nContoh: \"Besok aku ada acara apa?\"",
     "image": "11-google.jpg"
+  },
+  {
+    "id": "friday-12",
+    "name": "Catatan Gym (Hevy)",
+    "description": "Hubungkan akun Hevy milikmu, lalu catat latihan lewat chat, voice note, atau foto catatan gym. Friday mengenali latihannya, menambah latihan baru kalau belum ada, menyusun program, dan membaca progresmu. Setiap perubahan dikonfirmasi dulu dengan kode.\n\nContoh: \"Catat ke Hevy: bench press 80 kg 3x8 tadi pagi\"",
+    "image": "12-hevy.jpg"
   }
 ]

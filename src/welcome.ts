@@ -1,6 +1,7 @@
 import { config, type Contact } from "./config.js";
 import { allContacts } from "./contacts.js";
 import { googleEnabled } from "./google.js";
+import { hevyEnabled } from "./hevy.js";
 import { imagesEnabled } from "./images.js";
 import { transcriptionEnabled } from "./transcribe.js";
 import type { Outbox } from "./types.js";
@@ -26,6 +27,7 @@ export function welcomeMessage(name: string): string {
     feature("🧠 *Mengingat hal penting*", `"Ingat ya, aku alergi udang"`),
     feature(`📨 *Titip pesan ke ${admin}*`, `"Bilang ke ${admin} aku telat 15 menit"`),
     ...(googleEnabled ? [feature("🔗 *Terhubung ke akun Google milikmu*", `Kirim /google, lalu tulis "Besok aku ada acara apa?"`)] : []),
+    ...(hevyEnabled ? [feature("🏋️ *Catat latihan gym di Hevy*", `Kirim /hevy untuk menghubungkan, lalu kirim foto catatan latihanmu dan tulis "Catat ke Hevy ya"`)] : []),
     feature("📊 *Bantu di grup, termasuk membuat polling*", `Kalau saya ada di grupmu, mention saya atau awali dengan "${bot}," lalu tulis "buat polling tanggal makan bareng"`),
     [
       "*Tips:*",

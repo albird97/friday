@@ -8,6 +8,7 @@ import { sheetsToXlsx, sheetToCsv } from "./docs/sheets.js";
 import { slidesToPptx } from "./docs/slides.js";
 import { imagesEnabled, loadImage, makeImage, saveImage, type ImageResult } from "./images.js";
 import { errandTools, runErrandTool } from "./errands.js";
+import { hevyTools, runHevyTool } from "./hevyapps.js";
 import { addMemory, forgetMemory, SHARED } from "./memory.js";
 import { onehubTools, runOnehubTool } from "./onehub.js";
 import { pollInChat, pollResults, savePoll } from "./polls.js";
@@ -398,12 +399,12 @@ export const toolParams: BetaToolUnion[] = [
 ];
 
 /**
- * The tools offered in a chat: the shared ones, plus errands and onehub for the people allowed to use them. Those
+ * The tools offered in a chat: the shared ones, plus errands, onehub, Google and Hevy for the people allowed to use them. Those
  * come after the shared, cached definitions so every chat still shares that cache.
  */
 export async function toolsFor(chat: ChatContext): Promise<BetaToolUnion[]> {
   const admin = isAdmin(chat.sender.number) ? ADMIN_TOOLS.filter((t) => imagesEnabled || t.name !== "set_profile_picture").map(toParam) : [];
-  const extra = [...admin, ...errandTools(chat), ...(await onehubTools(chat)), ...googleTools(chat)];
+  const extra = [...admin, ...errandTools(chat), ...(await onehubTools(chat)), ...googleTools(chat), ...hevyTools(chat)];
   return extra.length ? [...toolParams, ...extra] : toolParams;
 }
 
@@ -412,7 +413,10 @@ export async function runTool(name: string, input: unknown, ctx: ToolContext): P
   try {
     if (!t) {
       const content =
-        (await runErrandTool(name, input, ctx.chat, ctx.outbox)) ?? (await runOnehubTool(name, input, ctx.chat, ctx.outbox)) ?? (await runGoogleTool(name, input, ctx.chat, ctx.outbox));
+        (await runErrandTool(name, input, ctx.chat, ctx.outbox)) ??
+        (await runOnehubTool(name, input, ctx.chat, ctx.outbox)) ??
+        (await runGoogleTool(name, input, ctx.chat, ctx.outbox)) ??
+        (await runHevyTool(name, input, ctx.chat, ctx.outbox));
       return content === undefined ? { content: `Unknown tool ${name}.`, isError: true } : { content, isError: false };
     }
     const parsed = t.schema.safeParse(input);

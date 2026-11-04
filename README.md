@@ -12,6 +12,8 @@ and it can:
   Friday answers in text)
 - 🧠 **Remember things** you tell it (birthdays, preferences) across conversations
 - 📨 **Pass messages** to other people ("tell Sarah I'll be late")
+- 🏋️ **Log workouts in Hevy** from a message, a voice note or a photo of a gym notebook, build routines, track body
+  weight and coach from your training history (each person links their own Hevy account)
 
 ## How it works
 
@@ -109,6 +111,7 @@ Things to try:
 | `/help` | What Friday can do |
 | `/reset` | Start a fresh conversation (memories and reminders are kept) |
 | `/id` | Show this chat's id and your number |
+| `/hevy` | Link your own Hevy account (`/hevy <api key>`; `/hevy putus` unlinks it) |
 | `/usage` | *(admin)* Claude usage per person, today and this month: estimated dollars (list prices) and tokens |
 | `/contacts` | *(admin)* Who can use Friday |
 | `/add <name> <number>` | *(admin)* Let someone use Friday and send them a welcome message listing what it can do, e.g. `/add Mom 6281234567890` |
@@ -186,6 +189,34 @@ On the server, after pointing the domain's DNS at it and creating a Web OAuth cl
 sudo /opt/friday/app/scripts/linux-service.sh web fridayai.my.id
 sudo /opt/friday/app/scripts/linux-service.sh google fridayai.my.id
 ```
+
+## Hevy (workout log)
+
+Anyone who uses [Hevy](https://www.hevyapp.com) with Hevy Pro can link their own account: send `/hevy` in a private
+chat, copy the API key from [hevy.com/settings?developer](https://hevy.com/settings?developer), and send
+`/hevy <api key>` (or paste the key on its own right after `/hevy`). Friday checks the key with Hevy and keeps it
+encrypted with `GOOGLE_TOKEN_KEY`, which is all the setup Hevy needs. The key is handled before Claude, so it never
+reaches Claude or the chat history. `/hevy putus` forgets it.
+
+Then, in that private chat only:
+
+- **Log a workout** by typing it ("bench 80 kg 3x8, pull ups 3x10 tadi pagi"), in a voice note, or with a photo of a
+  notebook page, a whiteboard, a treadmill screen or another app's summary. Friday reads every set, matches each
+  exercise to the person's Hevy exercises (gym shorthand like "db", "rdl" or "lat pull down" included) and creates any
+  that don't exist yet as custom exercises, in the same confirmation. Weights in pounds are converted to kg.
+- **Fix a workout** (a set, the time, the title), **make routines** or a whole program in a folder, and **record body
+  weight, body fat and sizes**.
+- **Ask about training**: what they did last week, an exercise's history with best weight and estimated 1RM, a
+  monthly recap with sets per muscle, or what to lift next.
+
+Reading runs straight away. Every change gets a preview built by Friday's code from the exact plan (times in the
+person's timezone, every set, new exercises marked ✨, private or public) and runs only after a `YA 1234` reply, checked
+by code rather than by Claude. The preview also warns when a workout at the same time is already in Hevy. New
+workouts are private unless the person asks otherwise.
+
+Hevy's public API can't delete anything, edit or remove custom exercises, or rename folders, and it never says
+whether an existing workout is private (Friday remembers what it set and says when it doesn't know). Those things
+are done in the Hevy app.
 
 ## Costs
 
