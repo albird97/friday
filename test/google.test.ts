@@ -284,7 +284,7 @@ describe("changing things in Google", () => {
     await connect(WIFE, "sarah");
     await tool(chatOf(WIFE), "google_gmail_send", mail);
     const code = codeFromPreview();
-    db.prepare("UPDATE google_pending SET created_at = 0").run();
+    db.prepare("UPDATE google_pending SET created_at = ?").run(Date.now() - 11 * 60_000); // codes last 10 minutes
     await say(chatOf(WIFE), `YA ${code}`);
     assert.equal(sentMail().length, 0);
     assert.match(sent.at(-1)!.text, /kedaluwarsa/);
