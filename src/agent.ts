@@ -67,7 +67,7 @@ async function runTurn(session: Session, conv: Conversation): Promise<boolean> {
     client ??= new Anthropic({ maxRetries: 3 });
     const response = await client.beta.messages
       .stream({
-        model: currentModel(),
+        model: currentModel(conv.key),
         max_tokens: 32_000,
         betas: BETAS,
         fallbacks: "default",
@@ -125,8 +125,8 @@ async function runTurn(session: Session, conv: Conversation): Promise<boolean> {
           };
         }
         const result = await conv.runTool(use.name, use.input);
-        // Someone's Google and Hevy data (group workouts included) stays out of the server logs, as the privacy policy says.
-        const detail = /^(google|hevy|group_workout)_/.test(use.name) ? "" : `: ${result.content.slice(0, 200)}`;
+        // Someone's Google, Spotify, Shopee and Hevy data (group workouts included) stays out of the server logs, as the privacy policy says.
+        const detail = /^(google|spotify|shopee|hevy|group_workout)_/.test(use.name) ? "" : `: ${result.content.slice(0, 200)}`;
         console.log(`[${conv.label}] tool ${use.name}${result.isError ? " ERROR" : ""}${detail}`);
         return { type: "tool_result", tool_use_id: use.id, content: result.content, ...(result.isError && { is_error: true }) };
       }),

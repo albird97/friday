@@ -42,6 +42,8 @@ const Env = z.object({
   ONEHUB_API_TOKEN: z.string().default(""),
   // Errands: numbers that may have Friday message people outside the contacts (restaurants, shops…), private chats only.
   ERRAND_USERS: z.string().default(""),
+  // Numbers that may pick the Claude model of their own private chat with /switch. The admin always can, groups too.
+  SWITCH_USERS: z.string().default(""),
   // New errands per day across everyone — messaging strangers a lot gets a number flagged as spam.
   ERRAND_DAILY_LIMIT: z.coerce.number().int().min(0).default(10),
   // Access requests from the website answered per day. Each one is a reply to a stranger who wrote first.
@@ -52,6 +54,24 @@ const Env = z.object({
   GOOGLE_CLIENT_ID: z.string().default(""),
   GOOGLE_CLIENT_SECRET: z.string().default(""),
   GOOGLE_TOKEN_KEY: z.string().default(""),
+  // Spotify: each contact links their own account with /spotify. From the app at developer.spotify.com; its tokens are
+  // encrypted with GOOGLE_TOKEN_KEY too. Empty = Spotify is off.
+  SPOTIFY_CLIENT_ID: z.string().default(""),
+  SPOTIFY_CLIENT_SECRET: z.string().default(""),
+  // Smart Life (Tuya): the cloud project at platform.tuya.com that the Smart Life app account is linked to. Its Access
+  // ID and Secret, the linked account's UID (Devices → Link App Account), and the project's data center. Empty = off.
+  TUYA_ACCESS_ID: z.string().default(""),
+  TUYA_ACCESS_SECRET: z.string().default(""),
+  TUYA_UID: z.string().default(""),
+  TUYA_REGION: z.enum(["", "cn", "us", "us-e", "eu", "eu-w", "in", "sg"]).default(""),
+  // Numbers that may control those devices from their private chat. The admin always can.
+  TUYA_USERS: z.string().default(""),
+  // Shopee: each contact links their own shop with /shopee, read-only. Partner ID and Key of Friday's own app at
+  // open.shopee.com (not onehub's); tokens are encrypted with GOOGLE_TOKEN_KEY. The sandbox is
+  // https://openplatform.sandbox.test-stable.shopee.sg. Empty = Shopee is off.
+  SHOPEE_PARTNER_ID: z.string().default(""),
+  SHOPEE_PARTNER_KEY: z.string().default(""),
+  SHOPEE_API_URL: z.string().default("https://partner.shopeemobile.com").transform((url) => url.replace(/\/+$/, "")),
   // Friday's public address, e.g. https://fridayai.my.id. Its pages (privacy policy, Google's redirect) listen on WEB_PORT.
   PUBLIC_URL: z.string().default("").transform((url) => url.replace(/\/+$/, "")),
   WEB_PORT: z.coerce.number().int().positive().default(3210),
@@ -85,6 +105,8 @@ export const config = {
   pairingNumber: env.PAIRING_NUMBER.replace(/\D/g, ""),
   onehubUsers: env.ONEHUB_USERS.split(",").map((n) => n.replace(/\D/g, "")).filter(Boolean),
   errandUsers: env.ERRAND_USERS.split(",").map((n) => n.replace(/\D/g, "")).filter(Boolean),
+  tuyaUsers: env.TUYA_USERS.split(",").map((n) => n.replace(/\D/g, "")).filter(Boolean),
+  switchUsers: env.SWITCH_USERS.split(",").map((n) => n.replace(/\D/g, "")).filter(Boolean),
   authDir: path.join(env.DATA_DIR, "whatsapp-auth"),
   dbPath: path.join(env.DATA_DIR, "friday.db"),
   outboxDir: path.join(env.DATA_DIR, "outbox"),

@@ -17,6 +17,15 @@ export function toWhatsApp(text: string): string {
     .trim();
 }
 
+/** At most `max` characters, never cutting an emoji in half: the API refuses half of one as invalid JSON. */
+export function clip(text: string, max: number): string {
+  const code = text.charCodeAt(max - 1);
+  return text.slice(0, code >= 0xd800 && code <= 0xdbff ? max - 1 : max);
+}
+
+/** Turns halves of characters left by an earlier cut into "�", so text stored before `clip` existed can be sent. */
+export const wellFormed = (text: string) => text.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "�");
+
 /** Splits long text into WhatsApp-sized chunks, preferring paragraph and line breaks. */
 export function chunk(text: string, max = 3500): string[] {
   const chunks: string[] = [];
@@ -25,7 +34,7 @@ export function chunk(text: string, max = 3500): string[] {
     let cut = rest.lastIndexOf("\n\n", max);
     if (cut < max / 2) cut = rest.lastIndexOf("\n", max);
     if (cut < max / 2) cut = rest.lastIndexOf(" ", max);
-    if (cut < max / 2) cut = max;
+    if (cut < max / 2) cut = clip(rest, max).length;
     chunks.push(rest.slice(0, cut).trimEnd());
     rest = rest.slice(cut).trimStart();
   }

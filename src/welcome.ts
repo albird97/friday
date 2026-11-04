@@ -3,6 +3,7 @@ import { allContacts } from "./contacts.js";
 import { googleEnabled } from "./google.js";
 import { hevyEnabled } from "./hevy.js";
 import { imagesEnabled } from "./images.js";
+import { shopeeEnabled } from "./shopee.js";
 import { transcriptionEnabled } from "./transcribe.js";
 import type { Outbox } from "./types.js";
 
@@ -19,14 +20,16 @@ export function welcomeMessage(name: string): string {
     "*Yang bisa saya bantu:*",
     feature("💬 *Tanya apa saja*", `"Ide menu makan malam untuk 4 orang dong"`),
     feature("🔎 *Cari info terbaru di internet*", `"Harga emas hari ini berapa?"`),
-    feature("⏰ *Pengingat, sekali atau berulang*", `"Ingatkan aku minum obat tiap hari jam 8 pagi"`),
+    feature("⏰ *Pengingat dan jadwal rutin*", `"Ingatkan aku minum obat tiap hari jam 8 pagi" atau "Tiap pagi jam 6 kirimkan ringkasan berita hari ini"`),
     feature("📷 *Baca foto dan file*", `Kirim foto atau PDF, lalu tulis "Ringkas isi surat ini"`),
     ...(transcriptionEnabled ? [feature("🎙️ *Mengerti voice note*", "Kirim voice note, nanti saya balas dengan teks")] : []),
     feature("📄 *Buat PDF, Word, Excel, dan PowerPoint*", `"Buatkan anggaran belanja bulanan dalam Excel"`),
     ...(imagesEnabled ? [feature("🎨 *Buat dan edit gambar*", `"Buatkan gambar ucapan ulang tahun bertema kucing"`)] : []),
+    feature("📈 *Analisis teknikal saham, emas, forex, dan crypto*", `"Analisis BBCA harian dan buatkan trading plan"`),
     feature("🧠 *Mengingat hal penting*", `"Ingat ya, aku alergi udang"`),
     feature(`📨 *Titip pesan ke ${admin}*`, `"Bilang ke ${admin} aku telat 15 menit"`),
     ...(googleEnabled ? [feature("🔗 *Terhubung ke akun Google milikmu*", `Kirim /google, lalu tulis "Besok aku ada acara apa?"`)] : []),
+    ...(shopeeEnabled ? [feature("🛍️ *Cek toko Shopee milikmu*", `Kirim /shopee, lalu tulis "Pesanan yang belum dikirim hari ini apa saja?"`)] : []),
     ...(hevyEnabled ? [feature("🏋️ *Catat latihan gym di Hevy*", `Kirim /hevy untuk menghubungkan, lalu kirim foto catatan latihanmu dan tulis "Catat ke Hevy ya"`)] : []),
     feature("📊 *Bantu di grup, termasuk membuat polling*", `Kalau saya ada di grupmu, mention saya atau awali dengan "${bot}," lalu tulis "buat polling tanggal makan bareng"`),
     [

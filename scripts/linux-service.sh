@@ -232,6 +232,50 @@ EOF
     systemctl restart "$NAME"
     echo "Google sign-in is on. Friday restarted."
     ;;
+  spotify)
+    # Sets up Spotify sign-in, after `google` (it shares PUBLIC_URL and the token key). Reads the secret without showing it.
+    ENV="$APP/.env"
+    grep -q '^PUBLIC_URL=https://' "$ENV" || { echo "Run '$0 google <domain>' first." >&2; exit 1; }
+    set_env() {
+      grep -v "^$1=" "$ENV" > "$ENV.new" || true
+      printf '%s=%s\n' "$1" "$2" >> "$ENV.new"
+      cat "$ENV.new" > "$ENV"
+      rm -f "$ENV.new"
+    }
+    read -r -p "Spotify client ID: " CLIENT_ID
+    read -r -s -p "Spotify client secret (hidden): " CLIENT_SECRET
+    echo
+    set_env SPOTIFY_CLIENT_ID "$CLIENT_ID"
+    set_env SPOTIFY_CLIENT_SECRET "$CLIENT_SECRET"
+    grep -q '^GOOGLE_TOKEN_KEY=[0-9a-f]\{64\}$' "$ENV" || set_env GOOGLE_TOKEN_KEY "$(openssl rand -hex 32)"
+    systemctl restart "$NAME"
+    echo "Spotify sign-in is on. Friday restarted."
+    ;;
+  shopee)
+    # Sets up Shopee shop linking, after `google` (it shares PUBLIC_URL and the token key). Reads the key without showing
+    # it. Add "sandbox" to use Shopee's test environment until the app is live.
+    ENV="$APP/.env"
+    grep -q '^PUBLIC_URL=https://' "$ENV" || { echo "Run '$0 google <domain>' first." >&2; exit 1; }
+    set_env() {
+      grep -v "^$1=" "$ENV" > "$ENV.new" || true
+      printf '%s=%s\n' "$1" "$2" >> "$ENV.new"
+      cat "$ENV.new" > "$ENV"
+      rm -f "$ENV.new"
+    }
+    read -r -p "Shopee partner ID: " PARTNER_ID
+    read -r -s -p "Shopee partner key (hidden): " PARTNER_KEY
+    echo
+    set_env SHOPEE_PARTNER_ID "$PARTNER_ID"
+    set_env SHOPEE_PARTNER_KEY "$PARTNER_KEY"
+    if [ "${2:-}" = sandbox ]; then
+      set_env SHOPEE_API_URL "https://openplatform.sandbox.test-stable.shopee.sg"
+    else
+      set_env SHOPEE_API_URL "https://partner.shopeemobile.com"
+    fi
+    grep -q '^GOOGLE_TOKEN_KEY=[0-9a-f]\{64\}$' "$ENV" || set_env GOOGLE_TOKEN_KEY "$(openssl rand -hex 32)"
+    systemctl restart "$NAME"
+    echo "Shopee shop linking is on. Friday restarted."
+    ;;
   logs)
     journalctl -u "$NAME" -n 50 -f -o cat
     ;;
@@ -246,7 +290,7 @@ EOF
     echo "Friday's service is removed. Its files are still in $HOME_DIR."
     ;;
   *)
-    echo "Usage: sudo $0 install|update|restart|logs|backup|web|google|uninstall" >&2
+    echo "Usage: sudo $0 install|update|restart|logs|backup|web|google|spotify|shopee|uninstall" >&2
     exit 1
     ;;
 esac

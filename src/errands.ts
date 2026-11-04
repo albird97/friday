@@ -4,7 +4,7 @@ import { converse } from "./agent.js";
 import { config } from "./config.js";
 import { contactByNumber } from "./contacts.js";
 import { db } from "./db.js";
-import { chunk } from "./format.js";
+import { chunk, clip } from "./format.js";
 import { nowStamp } from "./time.js";
 import type { ChatContext, Outbox } from "./types.js";
 
@@ -269,7 +269,7 @@ export async function runErrandTool(name: string, input: unknown, chat: ChatCont
     const rows = db
       .prepare("SELECT * FROM errands WHERE requester_number = ? ORDER BY id DESC LIMIT 10")
       .all(chat.sender.number) as Errand[];
-    return rows.map((e) => `#${e.id} ${e.target_name} (+${e.target_number}) — ${e.status}: ${e.goal.slice(0, 120)}`).join("\n") || "No errands yet.";
+    return rows.map((e) => `#${e.id} ${e.target_name} (+${e.target_number}) — ${e.status}: ${clip(e.goal, 120)}`).join("\n") || "No errands yet.";
   }
   if (name === "end_errand") {
     const errand = mine(EndInput.parse(input).errand_id, chat);

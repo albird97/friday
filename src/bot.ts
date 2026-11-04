@@ -4,18 +4,23 @@ import os from "node:os";
 import path from "node:path";
 import { handleAccessRequest } from "./access.js";
 import { respond } from "./agent.js";
+import { announce, announcementNotes } from "./announce.js";
 import { config } from "./config.js";
 import sharp from "sharp";
 import { syncCatalog } from "./catalog.js";
 import { addContact, allContacts, contactByNumber, isAdmin, removeContact, takeDailyQuota } from "./contacts.js";
 import { db } from "./db.js";
+import { clip } from "./format.js";
 import { imagesEnabled, saveImage } from "./images.js";
-import { currentModel, FAMILIES, isFamily, latestModel, setModel } from "./model.js";
+import { chatModel, currentModel, FAMILIES, isFamily, latestModel, setChatModel, setModel } from "./model.js";
 import { errandFor, errandIncoming, errandNotes } from "./errands.js";
 import { connectMessage, disconnect, googleAccount, googleAllowed, googleEnabled, youtubeMessage } from "./google.js";
+import { cancelLink, connectMessage as shopeeConnectMessage, disconnectShopee, shopeeAllowed, shopeeEnabled, shopeeShops } from "./shopee.js";
+import { connectMessage as spotifyConnectMessage, disconnectSpotify, share, sharesOf, spotifyAccount, spotifyAllowed, spotifyEnabled, unshare } from "./spotify.js";
 import { connectHevy, connectMessage as hevyConnectMessage, disconnectHevy, hevyAccount, hevyAllowed, hevyEnabled, HevyError, isBareKey, isKeyShaped, KEY_PAGE } from "./hevy.js";
 import { answerGroupInvite, groupWorkoutNote, leaveGroupWorkouts } from "./groupworkout.js";
 import { EVERYWHERE, isPaused, parseDuration, pause, resume } from "./pause.js";
+import type { Reminder } from "./reminders.js";
 import { deleteSession, expireChatSessions, expireSession } from "./session.js";
 import { statusReport } from "./status.js";
 import { isStyle, setStyle, STYLES, styleOf } from "./styles.js";
@@ -67,6 +72,28 @@ export function handleIncoming(msg: Incoming, outbox: Outbox): Promise<void> {
   return next;
 }
 
+/**
+ * A scheduled task comes due: Friday gets it as a message from the person who set it up, in the chat it runs in, so it
+ * goes through the same pause, limits and permissions as if they had typed it then. It never starts with "/", so it
+ * can't run a command. A task whose owner is no longer a contact stops.
+ */
+export function runScheduledTask(task: Reminder, outbox: Outbox): Promise<void> {
+  const owner = contactByNumber(task.created_by);
+  if (!owner) {
+    db.prepare("UPDATE reminders SET active = 0 WHERE id = ?").run(task.id);
+    return Promise.resolve();
+  }
+  const isGroup = task.chat_id.endsWith("@g.us");
+  return handleIncoming(
+    {
+      chat: { chatId: task.chat_id, isGroup, chatName: task.chat_name ?? owner.name, sender: { ...owner, isContact: true } },
+      text: `[Scheduled task #${task.id} that ${owner.name} set up, due now: ${task.text}]`,
+      addressed: true,
+    },
+    outbox,
+  );
+}
+
 async function processMessage(msg: Incoming, outbox: Outbox): Promise<void> {
   const { chat } = msg;
   if (!msg.addressed) return;
@@ -104,7 +131,7 @@ async function processMessage(msg: Incoming, outbox: Outbox): Promise<void> {
 
   const content = await toContent(msg);
   if (!content) return;
-  for (const notes of [errandNotes(chat), groupWorkoutNote(chat)]) if (notes) content.unshift({ type: "text", text: notes });
+  for (const notes of [errandNotes(chat), announcementNotes(chat), groupWorkoutNote(chat)]) if (notes) content.unshift({ type: "text", text: notes });
   await respond(chat, content, outbox);
 }
 
@@ -115,13 +142,15 @@ export const ADMIN_HELP = [
   "/add <nama> <nomor> — izinkan orang baru (dia dapat pesan sambutan)",
   "/remove <nama> — cabut izinnya",
   "/katalog — perbarui katalog WhatsApp Business",
+  "/umumkan <teks> — kirim teks ini apa adanya ke semua kontak, tanpa nama pengirim (dari chat pribadi)",
   "",
   "_Rahasia (tidak terlihat orang lain):_",
   "/status — kesehatan, versi, biaya hari ini & bulan ini",
   "/style chill | formal | funny | ngeyel | normal — gaya bicara di chat itu (/gaya juga bisa)",
   "/diam 30m | 2j | 1h — di grup: Friday diam sementara (h = hari)",
   "/bangun — di grup: akhiri /diam",
-  "/switch opus | sonnet | haiku — ganti model untuk semua chat (selalu versi terbaru)",
+  "/switch opus | sonnet | haiku | default — ganti model di chat itu saja (selalu versi terbaru)",
+  "/switch semua opus | sonnet | haiku — ganti model semua chat yang tidak memilih sendiri",
   "/stop — darurat: Friday diam di semua chat",
   "/lanjut — nyalakan lagi setelah /stop",
   "/backup — kirim cadangan database",
@@ -141,12 +170,15 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
       await reply(
         [
           `*${config.BOT_NAME}* — just talk to me normally${chat.isGroup ? ` (mention me, reply to me, or start with "${config.BOT_NAME},")` : ""}.`,
-          `I can answer questions, search the web, set reminders, read photos and PDFs${transcriptionEnabled ? ", understand voice notes" : ""}, make PDF / Word / Excel / PowerPoint files${imagesEnabled ? ", and create or edit pictures" : ""}.`,
+          `I can answer questions, search the web, set reminders, read photos and PDFs${transcriptionEnabled ? ", understand voice notes" : ""}, analyse stock, forex, gold and crypto charts, make PDF / Word / Excel / PowerPoint files${imagesEnabled ? ", and create or edit pictures" : ""}.`,
           "",
           "/reset — start a fresh conversation (keeps memories and reminders)",
           "/id — show this chat's id and your number",
           ...(googleEnabled ? ["/google — hubungkan akun Google milikmu (/google youtube untuk YouTube, /google putus untuk memutus)"] : []),
           ...(hevyEnabled ? ["/hevy — hubungkan Hevy untuk mencatat latihan gym (/hevy putus untuk memutus)"] : []),
+          ...(spotifyEnabled ? ["/spotify — hubungkan Spotify milikmu untuk membuat playlist (/spotify bareng <nama> untuk playlist bareng)"] : []),
+          ...(shopeeEnabled ? ["/shopee — hubungkan toko Shopee milikmu untuk menanyakan pesanan, pendapatan, stok, dan retur"] : []),
+          ...(!admin && !chat.isGroup && config.switchUsers.includes(chat.sender.number) ? ["/switch opus | sonnet | haiku | default — pilih model Claude untuk chat ini"] : []),
           // The admin sees every command, the unlisted ones too, but only in their private chat.
           ...(admin && !chat.isGroup ? ["", ...ADMIN_HELP] : []),
         ].join("\n"),
@@ -183,6 +215,18 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
       } catch (err) {
         await toAdmin(`⚠️ Katalog gagal diperbarui: ${err instanceof Error ? err.message : String(err)}\nPastikan nomor ini akun WhatsApp Business.`);
       }
+      return true;
+    }
+    case "/umumkan": {
+      if (!admin) return false;
+      // Cut from the raw text, not args: line breaks are part of the announcement.
+      const text = msg.text.trim().slice(command.length).trim();
+      if (chat.isGroup || !text || msg.media) {
+        await toAdmin("Kirim dari chat pribadi ini: /umumkan <teks>\nHanya teks, baris baru boleh. Gambar dan file tidak ikut terkirim.");
+        return true;
+      }
+      await toAdmin("📣 Mengirim pengumuman…");
+      await toAdmin(await announce(text, outbox));
       return true;
     }
     // Not listed in /help.
@@ -230,6 +274,58 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
       } else {
         const account = hevyAccount(chat.sender.number);
         await reply(account ? `Hevy terhubung: *${account.name}*\nKirim /hevy putus untuk memutus.` : hevyConnectMessage(allContacts()[0]?.name ?? "admin"));
+      }
+      return true;
+    }
+    case "/spotify": {
+      if (!spotifyEnabled) return false;
+      if (!spotifyAllowed(chat)) {
+        await reply("Spotify hanya bisa dihubungkan dan dipakai di chat pribadi dengan saya.");
+        return true;
+      }
+      const account = spotifyAccount(chat.sender.number);
+      const action = args[0]?.toLowerCase();
+      const who = args.slice(1).join(" ");
+      if (action === "putus") {
+        const gone = disconnectSpotify(chat.sender.number, chat.chatId);
+        await reply(gone ? "✅ Spotify diputus, izin playlist bareng dicabut, dan riwayat chat ini dihapus dari server. Untuk mencabut dari sisi Spotify juga: spotify.com/account/apps" : "Belum ada Spotify yang terhubung.");
+      } else if (action === "bareng" && who) {
+        await reply(await share(chat.sender, who, outbox));
+      } else if (action === "stop" && who) {
+        await reply(unshare(chat.sender.number, who));
+      } else if (action === "bareng" || action === "stop") {
+        const { given, received } = sharesOf(chat.sender.number);
+        await reply(
+          [
+            `Seleramu boleh dipakai: ${given.join(", ") || "belum ada"}`,
+            `Boleh kamu pakai: ${received.join(", ") || "belum ada"}`,
+            "",
+            "/spotify bareng <nama> — izinkan orang itu membuat playlist bareng dari seleramu",
+            "/spotify stop <nama> — cabut izinnya",
+          ].join("\n"),
+        );
+      } else if (account) {
+        await reply(`Spotify terhubung: ${account.name}\nKirim /spotify bareng <nama> untuk playlist bareng, atau /spotify putus untuk memutus.`);
+      } else {
+        await reply(spotifyConnectMessage(chat.sender.number, allContacts()[0]?.name ?? "admin"));
+      }
+      return true;
+    }
+    case "/shopee": {
+      if (!shopeeEnabled) return false;
+      if (!shopeeAllowed(chat)) {
+        await reply("Toko Shopee hanya bisa dihubungkan dan dipakai di chat pribadi dengan saya.");
+        return true;
+      }
+      const shops = shopeeShops(chat.sender.number);
+      const action = args[0]?.toLowerCase();
+      if (action === "putus") {
+        const gone = disconnectShopee(chat.sender.number, chat.chatId);
+        await reply(gone ? `✅ Toko Shopee diputus, dan riwayat chat ini dihapus dari server. Untuk mencabut izinnya dari sisi Shopee juga, buka link ini dan login dengan akun toko:\n${cancelLink()}` : "Belum ada toko Shopee yang terhubung.");
+      } else if (action === "tambah" || !shops.length) {
+        await reply(shopeeConnectMessage(chat.sender.number, allContacts()[0]?.name ?? "admin"));
+      } else {
+        await reply(`Toko Shopee terhubung: ${shops.map((s) => s.name).join(", ")}\nKirim /shopee tambah untuk menghubungkan toko lain, atau /shopee putus untuk memutus semuanya.`);
       }
       return true;
     }
@@ -282,31 +378,59 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
       return true;
     }
     case "/switch": {
-      if (!admin) return false;
-      const family = args[0]?.toLowerCase();
-      if (!family || !isFamily(family)) {
-        const hint = family ? `Model "${family}" tidak ada.` : `🧠 Model sekarang: *${currentModel()}*`;
-        await toAdmin(`${hint}\nPilihan: ${FAMILIES.join(", ")}\nContoh: /switch sonnet`);
+      // Applies to the chat it's sent in. The admin can use it anywhere, SWITCH_USERS only in their own private chat,
+      // and "/switch semua …" (admin) sets the model of every chat that hasn't chosen its own.
+      if (!(admin || (!chat.isGroup && config.switchUsers.includes(chat.sender.number)))) return false;
+      const answer = chat.isGroup ? toAdmin : reply;
+      const everywhere = admin && args[0]?.toLowerCase() === "semua";
+      const family = args[everywhere ? 1 : 0]?.toLowerCase();
+      const here = chat.isGroup ? `*${chat.chatName}*` : "chat ini";
+      const Here = chat.isGroup ? here : "Chat ini";
+      const options = `Pilihan: ${FAMILIES.join(", ")}${everywhere ? "" : ", default"}\nContoh: /switch ${everywhere ? "semua " : ""}sonnet`;
+      if (!family) {
+        const own = chatModel(chat.chatId);
+        const lines = [
+          everywhere ? `🧠 Model semua chat: *${currentModel()}*` : `🧠 Model di ${here}: *${currentModel(chat.chatId)}*${own ? "" : " (ikut default)"}`,
+          ...(admin && !everywhere ? [`Default semua chat: *${currentModel()}* (/switch semua <model>)`] : []),
+          options,
+        ];
+        await answer(lines.join("\n"));
+        return true;
+      }
+      if (family === "default" && !everywhere) {
+        setChatModel(chat.chatId, undefined);
+        expireSession(chat.chatId);
+        await answer(`🧠 ${Here} kembali ikut model default, *${currentModel()}*, mulai pesan berikutnya.`);
+        return true;
+      }
+      if (!isFamily(family)) {
+        await answer(`Model "${family}" tidak ada.\n${options}`);
         return true;
       }
       try {
         const model = await latestModel(family);
-        if (model === currentModel()) {
-          await toAdmin(`🧠 Friday sudah memakai *${model}*.`);
+        if (model === (everywhere ? currentModel() : chatModel(chat.chatId))) {
+          await answer(`🧠 ${everywhere ? "Semua chat" : Here} sudah memakai *${model}*.`);
           return true;
         }
-        setModel(model);
-        expireChatSessions();
-        await toAdmin(`🧠 Semua chat sekarang memakai *${model}*, mulai pesan berikutnya. Tiap chat lanjut dari ringkasan singkat obrolan terakhir.`);
+        if (everywhere) {
+          setModel(model);
+          expireChatSessions();
+          await answer(`🧠 Semua chat sekarang memakai *${model}*, kecuali yang memilih modelnya sendiri, mulai pesan berikutnya. Tiap chat lanjut dari ringkasan singkat obrolan terakhir.`);
+        } else {
+          setChatModel(chat.chatId, model);
+          expireSession(chat.chatId);
+          await answer(`🧠 ${Here} sekarang memakai *${model}*, mulai pesan berikutnya. Obrolan lanjut dari ringkasan singkat. Kembali ke default dengan /switch default.`);
+        }
       } catch (err) {
-        await toAdmin(`⚠️ Model gagal diganti: ${err instanceof Error ? err.message : String(err)}`);
+        await answer(`⚠️ Model gagal diganti: ${err instanceof Error ? err.message : String(err)}`);
       }
       return true;
     }
     case "/stop":
       if (!admin) return false;
       pause(EVERYWHERE, "Semua chat", null);
-      await toAdmin("⏸️ Friday berhenti membalas di semua chat (pribadi dan grup), termasuk balasan titip pesan. Pengingat tetap terkirim.\nKirim /lanjut untuk menyalakannya lagi.");
+      await toAdmin("⏸️ Friday berhenti membalas di semua chat (pribadi dan grup), termasuk balasan titip pesan dan tugas terjadwal. Pengingat dan pesan terjadwal tetap terkirim.\nKirim /lanjut untuk menyalakannya lagi.");
       return true;
     case "/lanjut":
       if (!admin) return false;
@@ -358,6 +482,9 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
         await disconnect(result.removed.number, outbox.chatIdFor(result.removed.number));
         disconnectHevy(result.removed.number, outbox.chatIdFor(result.removed.number));
         leaveGroupWorkouts(result.removed.number);
+        disconnectSpotify(result.removed.number, outbox.chatIdFor(result.removed.number));
+        disconnectShopee(result.removed.number, outbox.chatIdFor(result.removed.number));
+        db.prepare("DELETE FROM spotify_shares WHERE partner = ?").run(result.removed.number);
       }
       await toAdmin(result.removed ? `Removed ${result.removed.name}.` : (result.error ?? "Couldn't remove that contact."));
       return true;
@@ -446,7 +573,7 @@ async function toContent(msg: Incoming): Promise<BetaContentBlockParam[] | undef
   if (!msg.text && blocks.length === 0 && notes.length === 0) return undefined;
 
   let text = `[${nowStamp()}] ${msg.chat.sender.name}: ${msg.text}`.trimEnd();
-  if (msg.quoted) text += `\n(Replying to: "${msg.quoted.length > 1500 ? `${msg.quoted.slice(0, 1500)}…` : msg.quoted}")`;
+  if (msg.quoted) text += `\n(Replying to: "${msg.quoted.length > 1500 ? `${clip(msg.quoted, 1500)}…` : msg.quoted}")`;
   if (notes.length) text += `\n${notes.join("\n")}`;
   blocks.push({ type: "text", text });
   return blocks;

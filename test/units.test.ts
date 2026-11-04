@@ -8,12 +8,12 @@ import { parseMarkdown } from "../src/docs/markdown.js";
 import { markdownToPdf } from "../src/docs/pdf.js";
 import { sheetsToXlsx, sheetToCsv } from "../src/docs/sheets.js";
 import { slidesToPptx } from "../src/docs/slides.js";
-import { chunk, toWhatsApp } from "../src/format.js";
+import { chunk, clip, toWhatsApp, wellFormed } from "../src/format.js";
 import { outputSize } from "../src/images.js";
 import { hideSignalSessionDumps } from "../src/logging.js";
 import { addMemory, forgetMemory, memoriesFor, SHARED } from "../src/memory.js";
 import { createReminder, fireDueReminders, listReminders, nextRun } from "../src/reminders.js";
-import { isStale, recapOf } from "../src/session.js";
+import { isStale, loadSession, recapOf, saveSession } from "../src/session.js";
 import { runTool, toolParams } from "../src/tools.js";
 import type { Outbox } from "../src/types.js";
 
@@ -106,6 +106,33 @@ describe("sessions", () => {
       { role: "assistant", content: [{ type: "thinking", thinking: "secret", signature: "s" }, { type: "text", text: "Hello!" }] },
     ]);
     assert.equal(recap, "[time] Albert: hi\nFriday: Hello!");
+  });
+
+  // A half emoji makes the API reject the whole request as invalid JSON, in every turn until /reset.
+  it("never cuts an emoji in half in a recap", () => {
+    const recap = recapOf([{ role: "assistant", content: [{ type: "text", text: `${"x".repeat(499)}🙂 and more` }] }]);
+    assert.equal(recap, `Friday: ${"x".repeat(499)}…`);
+    assert.equal(recap, wellFormed(recap));
+  });
+
+  it("mends a session stored with half an emoji", () => {
+    const half = "🙂".slice(0, 1);
+    saveSession("mend-test", { system: `recap ${half}…`, messages: [{ role: "user", content: [{ type: "text", text: `a${half}b` }] }], tokens: 1, updatedAt: 1 });
+    const session = loadSession("mend-test")!;
+    assert.equal(session.system, "recap �…");
+    assert.deepEqual(session.messages[0].content, [{ type: "text", text: "a�b" }]);
+    assert.equal(JSON.stringify(session).includes("\\ud83d"), false);
+  });
+});
+
+describe("cutting text", () => {
+  it("keeps whole emoji", () => {
+    assert.equal(clip("ab🙂", 3), "ab");
+    assert.equal(clip("ab🙂", 4), "ab🙂");
+    assert.equal(clip("abc", 10), "abc");
+    const parts = chunk("🙂".repeat(2000), 3001);
+    assert.ok(parts.every((p) => p === wellFormed(p)));
+    assert.equal(parts.join(""), "🙂".repeat(2000));
   });
 });
 

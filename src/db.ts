@@ -115,6 +115,12 @@ db.exec(`
     noted           INTEGER NOT NULL DEFAULT 0,
     created_at      INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS announcement_notes (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id     TEXT NOT NULL,
+    text        TEXT NOT NULL,
+    created_at  INTEGER NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS pauses (
     chat_id     TEXT PRIMARY KEY,
     chat_name   TEXT NOT NULL,
@@ -178,6 +184,41 @@ db.exec(`
     saved       INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (workout_id, number)
   );
+  CREATE TABLE IF NOT EXISTS spotify_accounts (
+    number        TEXT PRIMARY KEY,
+    spotify_id    TEXT NOT NULL,
+    name          TEXT NOT NULL,
+    refresh_token TEXT NOT NULL,
+    connected_at  INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS spotify_links (
+    state      TEXT PRIMARY KEY,
+    number     TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  -- owner lets partner use owner's taste for joint playlists.
+  CREATE TABLE IF NOT EXISTS spotify_shares (
+    owner      TEXT NOT NULL,
+    partner    TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (owner, partner)
+  );
+  -- A person can link several shops; one shop can be linked by several people, each with their own tokens.
+  CREATE TABLE IF NOT EXISTS shopee_shops (
+    number         TEXT NOT NULL,
+    shop_id        TEXT NOT NULL,
+    name           TEXT NOT NULL,
+    access_token   TEXT NOT NULL,
+    access_expires INTEGER NOT NULL,
+    refresh_token  TEXT NOT NULL,
+    connected_at   INTEGER NOT NULL,
+    PRIMARY KEY (number, shop_id)
+  );
+  CREATE TABLE IF NOT EXISTS shopee_links (
+    state      TEXT PRIMARY KEY,
+    number     TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS chat_styles (
     chat_id     TEXT PRIMARY KEY,
     chat_name   TEXT NOT NULL,
@@ -190,6 +231,8 @@ for (const [table, column, type] of [
   ["token_usage", "cache_write_1h", "INTEGER NOT NULL DEFAULT 0"],
   ["token_usage", "web_searches", "INTEGER NOT NULL DEFAULT 0"],
   ["google_links", "kind", "TEXT NOT NULL DEFAULT 'main'"],
+  ["reminders", "kind", "TEXT NOT NULL DEFAULT 'reminder'"],
+  ["reminders", "chat_name", "TEXT"],
 ] as const) {
   const columns = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
   if (!columns.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);

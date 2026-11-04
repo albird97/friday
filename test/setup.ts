@@ -17,10 +17,15 @@ process.env.ANTHROPIC_API_KEY = "test-key";
 delete process.env.ANTHROPIC_AUTH_TOKEN;
 process.env.ANTHROPIC_BASE_URL = "http://127.0.0.1:9"; // replaced below once the fake API is listening; never the real API
 process.env.DAILY_MESSAGE_LIMIT = "3";
+process.env.SWITCH_USERS = `${WIFE.number},6286666666666`;
 process.env.IMAGE_PROVIDER = "cloudflare";
 process.env.GOOGLE_CLIENT_ID = "test-client";
 process.env.GOOGLE_CLIENT_SECRET = "test-secret";
 process.env.GOOGLE_TOKEN_KEY = "0".repeat(64);
+process.env.SPOTIFY_CLIENT_ID = "spotify-client";
+process.env.SPOTIFY_CLIENT_SECRET = "spotify-secret";
+process.env.SHOPEE_PARTNER_ID = "2001234";
+process.env.SHOPEE_PARTNER_KEY = "shopee-key";
 process.env.PUBLIC_URL = "https://friday.test/";
 process.env.CLOUDFLARE_ACCOUNT_ID = "test-account";
 process.env.CLOUDFLARE_API_TOKEN = "test-token";
