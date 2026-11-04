@@ -4,133 +4,14 @@ import { beforeEach, describe, it } from "node:test";
 import { handleIncoming, type Incoming } from "../src/bot.js";
 import { db } from "../src/db.js";
 import { decrypt } from "../src/google.js";
-import { findExercises, forgetCatalog, matchScore, type Template } from "../src/hevy.js";
+import { findExercises, forgetCatalog, matchScore } from "../src/hevy.js";
 import { confirmHevy, hevyNotes, hevyTools } from "../src/hevyapps.js";
 import { buildSystemPrompt } from "../src/prompt.js";
 import { runTool } from "../src/tools.js";
 import type { ChatContext, Outbox } from "../src/types.js";
+import { BUILT_IN, hevyFake, KEYS, resetHevy } from "./hevy-fake.js";
 
-// Hevy itself, faked: one account per API key, holding exercises, workouts, routines, folders and measurements.
-
-const KEYS = { sarah: "11111111-2222-4333-8444-555555555555", albert: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", revoked: "99999999-9999-4999-8999-999999999999" };
-
-const BUILT_IN: Template[] = [
-  { id: "D04AC939", title: "Bench Press (Barbell)", type: "weight_reps", primary_muscle_group: "chest" },
-  { id: "3601968B", title: "Bench Press (Dumbbell)", type: "weight_reps", primary_muscle_group: "chest" },
-  { id: "6A6C31A5", title: "Lat Pulldown (Cable)", type: "weight_reps", primary_muscle_group: "lats" },
-  { id: "1B2B1E7C", title: "Pull Up", type: "bodyweight_reps", primary_muscle_group: "lats" },
-  { id: "ABCD0001", title: "Bicep Curl (Dumbbell)", type: "weight_reps", primary_muscle_group: "biceps" },
-  { id: "C6272009", title: "Plank", type: "duration", primary_muscle_group: "abdominals" },
-  { id: "RUN00001", title: "Running", type: "distance_duration", primary_muscle_group: "cardio" },
-  // Enough of these that the exercise list takes two pages.
-  ...Array.from({ length: 110 }, (_, i) => ({ id: `F${i}`, title: `Filler Move ${i} (Machine)`, type: "weight_reps", primary_muscle_group: "other" })),
-];
-
-type Account = { name: string; templates: Template[]; workouts: any[]; routines: any[]; folders: any[]; measurements: any[] };
-let accounts: Record<string, Account>;
-type Call = { method: string; path: string; key: string | null; body: any };
-let calls: Call[];
 let sent: { chatId: string; text: string; quote?: unknown }[];
-let nextId = 1;
-
-function resetHevy() {
-  const account = (name: string): Account => ({ name, templates: [...BUILT_IN], workouts: [], routines: [], folders: [], measurements: [] });
-  accounts = { [KEYS.sarah]: account("sarah_lifts"), [KEYS.albert]: account("albert") };
-  calls = [];
-}
-
-const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } });
-const page = (items: unknown[], key: string, q: URLSearchParams, max: number) => {
-  const size = Math.min(Number(q.get("pageSize") ?? 5), max);
-  const n = Number(q.get("page") ?? 1);
-  const count = Math.max(1, Math.ceil(items.length / size));
-  if (n > count) return json({ error: "Page not found" }, 404);
-  return json({ page: n, page_count: count, [key]: items.slice((n - 1) * size, n * size) });
-};
-
-const realFetch = globalThis.fetch;
-globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
-  const url = new URL(String(input instanceof Request ? input.url : input));
-  if (url.hostname !== "api.hevyapp.com") return realFetch(input, init);
-  const method = init?.method ?? "GET";
-  const key = new Headers(init?.headers).get("api-key");
-  const body = init?.body ? JSON.parse(String(init.body)) : undefined;
-  const path = url.pathname.replace(/^\/v1/, "");
-  calls.push({ method, path, key, body });
-  const a = key ? accounts[key] : undefined;
-  if (!a) return json({ error: "Unauthorized" }, 401);
-  const q = url.searchParams;
-  const [, kind, id] = path.split("/");
-  if (path === "/user/info") return json({ data: { id: "u1", name: a.name, url: `https://hevy.com/user/${a.name}` } });
-  if (path === "/workouts/count") return json({ workout_count: a.workouts.length });
-  if (kind === "exercise_templates" && method === "GET") return page(a.templates, "exercise_templates", q, 100);
-  if (kind === "exercise_templates" && method === "POST") {
-    const t = { id: `C${nextId++}`, title: body.exercise.title, type: body.exercise.exercise_type, primary_muscle_group: body.exercise.muscle_group, is_custom: true };
-    a.templates.push(t);
-    return json({ id: t.id });
-  }
-  const titled = (exercises: any[]) =>
-    exercises.map((e: any, i: number) => ({ index: i, title: a.templates.find((t) => t.id === e.exercise_template_id)?.title, exercise_template_id: e.exercise_template_id, supersets_id: e.superset_id, notes: e.notes, rest_seconds: e.rest_seconds, sets: e.sets.map((s: any, j: number) => ({ index: j, ...s })) }));
-  if (kind === "workouts" && !id && method === "GET") return page([...a.workouts].sort((x, y) => Date.parse(y.start_time) - Date.parse(x.start_time)), "workouts", q, 10);
-  if (kind === "workouts" && method === "POST") {
-    const w = { id: `w${nextId++}`, ...body.workout, exercises: titled(body.workout.exercises) };
-    delete w.is_private; // Hevy never shows it back
-    a.workouts.push(w);
-    return json({ workout: [w] }, 201);
-  }
-  if (kind === "workouts" && id) {
-    const i = a.workouts.findIndex((w) => w.id === id);
-    if (i < 0) return json({ error: "Workout not found" }, 404);
-    if (method === "PUT") {
-      if (typeof body.workout.is_private !== "boolean") return json({ error: "is_private is required" }, 400);
-      const { is_private: _hidden, ...rest } = body.workout;
-      a.workouts[i] = { ...a.workouts[i], ...rest, exercises: titled(body.workout.exercises) };
-      return json({ workout: [a.workouts[i]] });
-    }
-    return json(a.workouts[i]);
-  }
-  if (kind === "exercise_history") {
-    const sets = a.workouts.flatMap((w) =>
-      w.exercises.filter((e: any) => e.exercise_template_id === id).flatMap((e: any) => e.sets.map((s: any) => ({ workout_id: w.id, workout_title: w.title, workout_start_time: w.start_time, exercise_template_id: id, ...s, set_type: s.type }))),
-    );
-    return json({ exercise_history: sets });
-  }
-  if (kind === "routine_folders" && method === "GET") return page(a.folders, "routine_folders", q, 10);
-  if (kind === "routine_folders" && method === "POST") {
-    const f = { id: nextId++, title: body.routine_folder.title };
-    a.folders.push(f);
-    return json({ routine_folder: f }, 201);
-  }
-  if (kind === "routines" && !id && method === "GET") return page(a.routines, "routines", q, 10);
-  if (kind === "routines" && method === "POST") {
-    const r = { id: `r${nextId++}`, ...body.routine, exercises: titled(body.routine.exercises) };
-    a.routines.push(r);
-    return json({ routine: [r] }, 201);
-  }
-  if (kind === "routines" && id) {
-    const i = a.routines.findIndex((r) => r.id === id);
-    if (i < 0) return json({ error: "Routine not found" }, 404);
-    if (method === "PUT") {
-      if (body.routine.exercises.some((e: any) => e.sets.some((s: any) => "rep_range" in s && s.rep_range === null))) return json({ error: "rep_range must be an object" }, 400);
-      a.routines[i] = { ...a.routines[i], ...body.routine, exercises: titled(body.routine.exercises) };
-    }
-    const { notes: _notShown, ...shown } = a.routines[i]; // Hevy's GET leaves a routine's notes out
-    return json({ routine: shown });
-  }
-  if (kind === "body_measurements" && !id && method === "GET") return page(a.measurements, "body_measurements", q, 10);
-  if (kind === "body_measurements" && method === "POST") {
-    if (Object.values(body).some((v) => v === null)) return json({ error: "null not allowed" }, 400);
-    a.measurements.push(body);
-    return json({}, 201);
-  }
-  if (kind === "body_measurements" && id) {
-    const i = a.measurements.findIndex((m) => m.date === id);
-    if (i < 0) return json({ error: "Not found" }, 404);
-    if (method === "PUT") a.measurements[i] = { date: id, ...body };
-    return json(a.measurements[i]);
-  }
-  return json({ error: `fake Hevy has no ${method} ${path}` }, 404);
-}) as typeof fetch;
 
 const outbox: Outbox = {
   async sendText(chatId, text, quote) {
@@ -148,7 +29,7 @@ const say = (chat: ChatContext, text: string) => handleIncoming({ chat, text, ad
 const tool = (chat: ChatContext, name: string, input: unknown) => runTool(name, input, { chat, outbox });
 const last = () => sent.at(-1)!.text;
 const codeFromPreview = () => /YA (\d{4})/.exec(last())![1];
-const writes = () => calls.filter((c) => c.method !== "GET");
+const writes = () => hevyFake.calls.filter((c) => c.method !== "GET");
 const rows = (table: string, chatId?: string) =>
   (db.prepare(`SELECT COUNT(*) AS n FROM ${table}${chatId ? " WHERE chat_id = ?" : ""}`).get(...(chatId ? [chatId] : [])) as { n: number }).n;
 
@@ -204,7 +85,7 @@ describe("linking Hevy", () => {
     await say(groupOf(WIFE), `/hevy ${KEYS.sarah}`);
     assert.match(last(), /Jangan kirim API key di grup/);
     assert.equal(sent.at(-1)!.quote, undefined, "the warning doesn't quote the key back");
-    assert.equal(calls.length, 0, "the key isn't even tried");
+    assert.equal(hevyFake.calls.length, 0, "the key isn't even tried");
     assert.equal(rows("hevy_accounts"), 0);
   });
 
@@ -233,16 +114,16 @@ describe("whose Hevy is used", () => {
   it("always uses the sender's own key", async () => {
     await link(WIFE, KEYS.sarah);
     await link(ADMIN, KEYS.albert);
-    calls = [];
+    hevyFake.calls = [];
     await tool(chatOf(WIFE), "hevy_workouts", { number: ADMIN.number });
-    assert.ok(calls.length > 0 && calls.every((c) => c.key === KEYS.sarah));
+    assert.ok(hevyFake.calls.length > 0 && hevyFake.calls.every((c) => c.key === KEYS.sarah));
     const inGroup = await tool(groupOf(WIFE), "hevy_workouts", {});
     assert.equal(inGroup.isError, true);
   });
 
   it("tells Claude what to do when the key stops working", async () => {
     await link(WIFE, KEYS.sarah);
-    delete accounts[KEYS.sarah];
+    delete hevyFake.accounts[KEYS.sarah];
     const result = await tool(chatOf(WIFE), "hevy_workouts", {});
     assert.equal(result.isError, true);
     assert.match(result.content, /send \/hevy with a new key/);
@@ -261,13 +142,13 @@ describe("finding exercises", () => {
 
   it("searches every page of their exercises, custom ones included", async () => {
     await link(WIFE, KEYS.sarah);
-    accounts[KEYS.sarah].templates.push({ id: "MINE1", title: "Hip Thrust (Machine)", type: "weight_reps", primary_muscle_group: "glutes", is_custom: true });
+    hevyFake.accounts[KEYS.sarah].templates.push({ id: "MINE1", title: "Hip Thrust (Machine)", type: "weight_reps", primary_muscle_group: "glutes", is_custom: true });
     const result = await tool(chatOf(WIFE), "hevy_find_exercises", { names: ["hip thrust", "bench press"] });
     assert.match(result.content, /MINE1 \| Hip Thrust \(Machine\) \| weight_reps \| glutes \| their own/);
     assert.match(result.content, /D04AC939 \| Bench Press \(Barbell\)/);
-    assert.equal(calls.filter((c) => c.path === "/exercise_templates").length, 2, "two pages of 100");
+    assert.equal(hevyFake.calls.filter((c) => c.path === "/exercise_templates").length, 2, "two pages of 100");
 
-    accounts[KEYS.sarah].templates.push({ id: "MINE2", title: "Sissy Squat", type: "reps_only", primary_muscle_group: "quadriceps", is_custom: true });
+    hevyFake.accounts[KEYS.sarah].templates.push({ id: "MINE2", title: "Sissy Squat", type: "reps_only", primary_muscle_group: "quadriceps", is_custom: true });
     const fresh = await tool(chatOf(WIFE), "hevy_find_exercises", { names: ["sissy squat"] });
     assert.match(fresh.content, /MINE2 \| Sissy Squat/, "one made in the app a minute ago is found too");
   });
@@ -287,7 +168,7 @@ describe("logging a workout", () => {
 
   it("shows a preview and saves nothing until the code comes back", async () => {
     await link(WIFE, KEYS.sarah);
-    calls = [];
+    hevyFake.calls = [];
     const result = await tool(chatOf(WIFE), "hevy_log_workout", workout);
     assert.equal(result.isError, false, result.content);
     assert.match(result.content, /Nothing is saved yet/);
@@ -305,7 +186,7 @@ describe("logging a workout", () => {
   it("creates the new exercise once, then the workout, in UTC and kilograms", async () => {
     await link(WIFE, KEYS.sarah);
     await tool(chatOf(WIFE), "hevy_log_workout", workout);
-    calls = [];
+    hevyFake.calls = [];
     await say(chatOf(WIFE), `ya ${codeFromPreview()}`);
     assert.match(last(), /✅ Workout tersimpan di Hevy: \*Push pagi\* \(3 latihan, 7 set\)\. Latihan baru: Cable Fly Low to High\./);
     const [template, saved] = writes();
@@ -315,7 +196,7 @@ describe("logging a workout", () => {
     assert.equal(w.start_time, "2026-10-28T00:00:00Z");
     assert.equal(w.end_time, "2026-10-28T00:50:00Z");
     assert.equal(w.is_private, true);
-    assert.equal(w.exercises[1].exercise_template_id, accounts[KEYS.sarah].templates.at(-1)!.id);
+    assert.equal(w.exercises[1].exercise_template_id, hevyFake.accounts[KEYS.sarah].templates.at(-1)!.id);
     assert.equal(w.exercises[1].sets[0].weight_kg, 13.608);
     assert.deepEqual(w.exercises[0].sets[3], { type: "normal", weight_kg: 80, reps: 7, distance_meters: null, duration_seconds: null, custom_metric: null, rpe: 9 });
     assert.equal(claude.requests.length, 0, "the confirmation never goes through Claude");
@@ -354,7 +235,7 @@ describe("logging a workout", () => {
 
   it("warns when a workout at the same time is already in Hevy", async () => {
     await link(WIFE, KEYS.sarah);
-    accounts[KEYS.sarah].workouts.push({ id: "old", title: "Chest day", start_time: "2026-10-28T00:10:00Z", end_time: "2026-10-28T01:00:00Z", exercises: [] });
+    hevyFake.accounts[KEYS.sarah].workouts.push({ id: "old", title: "Chest day", start_time: "2026-10-28T00:10:00Z", end_time: "2026-10-28T01:00:00Z", exercises: [] });
     await tool(chatOf(WIFE), "hevy_log_workout", workout);
     assert.match(last(), /⚠️ Sudah ada workout di jam yang sama: \*Chest day\*/);
   });
@@ -363,9 +244,9 @@ describe("logging a workout", () => {
     await link(WIFE, KEYS.sarah);
     for (let i = 0; i < 12; i++) {
       const start = Date.parse("2026-11-01T00:00:00Z") - i * 3_600_000 * 20;
-      accounts[KEYS.sarah].workouts.push({ id: `recent${i}`, title: `Recent ${i}`, start_time: new Date(start).toISOString(), end_time: new Date(start + 3_600_000).toISOString(), exercises: [] });
+      hevyFake.accounts[KEYS.sarah].workouts.push({ id: `recent${i}`, title: `Recent ${i}`, start_time: new Date(start).toISOString(), end_time: new Date(start + 3_600_000).toISOString(), exercises: [] });
     }
-    accounts[KEYS.sarah].workouts.push({ id: "old", title: "Chest day", start_time: "2026-10-15T00:10:00Z", end_time: "2026-10-15T01:00:00Z", exercises: [] });
+    hevyFake.accounts[KEYS.sarah].workouts.push({ id: "old", title: "Chest day", start_time: "2026-10-15T00:10:00Z", end_time: "2026-10-15T01:00:00Z", exercises: [] });
     await tool(chatOf(WIFE), "hevy_log_workout", { ...workout, start: "2026-10-15T07:00" });
     assert.match(last(), /⚠️ Sudah ada workout di jam yang sama: \*Chest day\*/);
   });
@@ -407,7 +288,7 @@ describe("changing what's in Hevy", () => {
       ],
     });
     await say(chatOf(WIFE), `YA ${codeFromPreview()}`);
-    return accounts[KEYS.sarah].workouts[0].id as string;
+    return hevyFake.accounts[KEYS.sarah].workouts[0].id as string;
   }
 
   it("renames a workout and keeps its exercises, supersets and privacy", async () => {
@@ -426,7 +307,7 @@ describe("changing what's in Hevy", () => {
 
   it("says when it can't know a workout's privacy, since Hevy won't tell", async () => {
     await link(WIFE, KEYS.sarah);
-    accounts[KEYS.sarah].workouts.push({ id: "app1", title: "From the app", start_time: "2026-10-27T10:00:00Z", end_time: "2026-10-27T11:00:00Z", exercises: [] });
+    hevyFake.accounts[KEYS.sarah].workouts.push({ id: "app1", title: "From the app", start_time: "2026-10-27T10:00:00Z", end_time: "2026-10-27T11:00:00Z", exercises: [] });
     await tool(chatOf(WIFE), "hevy_update_workout", { workout_id: "app1", description: "Felt strong" });
     assert.match(last(), /Hevy tidak memberi tahu setelan lamanya/);
   });
@@ -440,7 +321,7 @@ describe("changing what's in Hevy", () => {
     await say(chatOf(WIFE), `YA ${codeFromPreview()}`);
     const posted = writes();
     assert.deepEqual(posted.map((c) => c.path), ["/routine_folders", "/routines", "/routines"]);
-    const folderId = accounts[KEYS.sarah].folders[0].id;
+    const folderId = hevyFake.accounts[KEYS.sarah].folders[0].id;
     assert.ok(posted.slice(1).every((c) => c.body.routine.folder_id === folderId));
     assert.deepEqual(posted[1].body.routine.exercises[0].sets[0].rep_range, { start: 8, end: 10 });
     assert.match(last(), /Rutinitas dibuat di Hevy: \*Push A\*, \*Push B\* \(folder PPL\)/);
@@ -448,7 +329,7 @@ describe("changing what's in Hevy", () => {
 
   it("edits a routine without wiping its notes or sending empty rep ranges", async () => {
     await link(WIFE, KEYS.sarah);
-    accounts[KEYS.sarah].routines.push({ id: "rA", title: "Push A", notes: "Slow eccentrics", folder_id: null, exercises: [{ title: "Bench Press (Barbell)", exercise_template_id: "D04AC939", supersets_id: null, rest_seconds: 90, sets: [{ type: "normal", reps: 8, weight_kg: 60 }] }] });
+    hevyFake.accounts[KEYS.sarah].routines.push({ id: "rA", title: "Push A", notes: "Slow eccentrics", folder_id: null, exercises: [{ title: "Bench Press (Barbell)", exercise_template_id: "D04AC939", supersets_id: null, rest_seconds: 90, sets: [{ type: "normal", reps: 8, weight_kg: 60 }] }] });
     await tool(chatOf(WIFE), "hevy_update_routine", { routine_id: "rA", title: "Push A (heavy)" });
     await say(chatOf(WIFE), `YA ${codeFromPreview()}`);
     let put = writes().at(-1)!;
@@ -464,7 +345,7 @@ describe("changing what's in Hevy", () => {
 
   it("records body weight, keeping what's already saved that day", async () => {
     await link(WIFE, KEYS.sarah);
-    accounts[KEYS.sarah].measurements.push({ date: "2026-11-01", weight_kg: 73, waist: 81 });
+    hevyFake.accounts[KEYS.sarah].measurements.push({ date: "2026-11-01", weight_kg: 73, waist: 81 });
     await tool(chatOf(WIFE), "hevy_log_measurements", { date: "2026-11-01", weight_lb: 160 });
     assert.match(last(), /Berat: 72,57 kg _\(sebelumnya 73 kg\)_/);
     await say(chatOf(WIFE), `YA ${codeFromPreview()}`);
@@ -488,7 +369,7 @@ describe("reading progress", () => {
       end_time: new Date(Date.parse(start) + 3_600_000).toISOString(),
       exercises: [{ title: "Bench Press (Barbell)", exercise_template_id: "D04AC939", sets: [{ type: "warmup", weight_kg: 40, reps: 10 }, { type: "normal", weight_kg: kg, reps: 5 }] }],
     });
-    accounts[KEYS.sarah].workouts.push(w("a", "2026-10-20T00:00:00Z", 80), w("b", "2026-10-27T00:00:00Z", 85));
+    hevyFake.accounts[KEYS.sarah].workouts.push(w("a", "2026-10-20T00:00:00Z", 80), w("b", "2026-10-27T00:00:00Z", 85));
     const stats = await tool(chatOf(WIFE), "hevy_stats", { from: "2026-10-19", to: "2026-11-01" });
     assert.match(stats.content, /^2 workouts between 2026-10-19 and 2026-11-01/);
     assert.match(stats.content, /Working sets per primary muscle: chest 2/);
@@ -501,7 +382,7 @@ describe("reading progress", () => {
 
   it("keeps Hevy data out of the server logs", async () => {
     await link(WIFE, KEYS.sarah);
-    accounts[KEYS.sarah].workouts.push({ id: "secret", title: "Rahasia Leg Day", start_time: "2026-10-20T00:00:00Z", end_time: "2026-10-20T01:00:00Z", exercises: [] });
+    hevyFake.accounts[KEYS.sarah].workouts.push({ id: "secret", title: "Rahasia Leg Day", start_time: "2026-10-20T00:00:00Z", end_time: "2026-10-20T01:00:00Z", exercises: [] });
     claude.replies.push({ content: [{ type: "tool_use", id: "t1", name: "hevy_workouts", input: {} }], stop_reason: "tool_use" });
     claude.replies.push({ content: [{ type: "text", text: "Kemarin leg day." }], stop_reason: "end_turn" });
     const logged: string[] = [];

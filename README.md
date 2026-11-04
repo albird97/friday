@@ -208,6 +208,15 @@ Then, in that private chat only:
   weight, body fat and sizes**.
 - **Ask about training**: what they did last week, an exercise's history with best weight and estimated 1RM, a
   monthly recap with sets per muscle, or what to lift next.
+- **Train together**: "ajak Sarah dan Budi workout bareng" (in a private chat or a WhatsApp group) invites other
+  Friday contacts. Each gets a private invite saying who can log for them and who will see it, and joins with a
+  `YA 1234` reply (anyone without Hevy is asked to `/hevy` first). Once everyone has joined, any member can log sets
+  for any member, from the group the session started in or their own private chat ("Sarah squat 40 kg 3x10, aku
+  60 kg 3x8"). Each exercise is matched against that member's own Hevy, and Friday asks when a name could be several.
+  Someone whose sets are logged from another chat gets a private note. The host can invite more people, drop someone
+  who isn't coming (which starts it for the rest) or cancel. "Selesai" sends each member their own workout privately,
+  to save into their own Hevy with their own code, so nobody's Hevy changes without them. If a code runs out, they
+  can ask for theirs again within a day.
 
 Reading runs straight away. Every change gets a preview built by Friday's code from the exact plan (times in the
 person's timezone, every set, new exercises marked ✨, private or public) and runs only after a `YA 1234` reply, checked

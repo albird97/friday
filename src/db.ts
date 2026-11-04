@@ -194,6 +194,30 @@ db.exec(`
     number      TEXT NOT NULL,
     is_private  INTEGER NOT NULL
   );
+  -- Group workouts: chat_id is the WhatsApp group it was started in (NULL when started in a private chat).
+  CREATE TABLE IF NOT EXISTS group_workouts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    host        TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    chat_id     TEXT,
+    chat_name   TEXT,
+    status      TEXT NOT NULL,
+    started_at  INTEGER,
+    finished_at INTEGER,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
+  );
+  -- status: invited, joined or left. draft: the sets logged for this member, as JSON.
+  CREATE TABLE IF NOT EXISTS group_workout_members (
+    workout_id  INTEGER NOT NULL,
+    number      TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    status      TEXT NOT NULL,
+    code        TEXT,
+    invited_at  INTEGER NOT NULL,
+    draft       TEXT NOT NULL DEFAULT '[]',
+    PRIMARY KEY (workout_id, number)
+  );
   CREATE TABLE IF NOT EXISTS chat_styles (
     chat_id     TEXT PRIMARY KEY,
     chat_name   TEXT NOT NULL,

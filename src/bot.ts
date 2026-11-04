@@ -16,6 +16,7 @@ import { connectMessage, disconnect, googleAccount, googleAllowed, googleEnabled
 import { confirmGoogle, googleNotes } from "./googleapps.js";
 import { connectHevy, connectMessage as hevyConnectMessage, disconnectHevy, hevyAccount, hevyAllowed, hevyEnabled, HevyError, isBareKey, isKeyShaped, KEY_PAGE } from "./hevy.js";
 import { confirmHevy, hevyNotes } from "./hevyapps.js";
+import { confirmGroupInvite, groupWorkoutNote, leaveGroupWorkouts } from "./groupworkout.js";
 import { actionNotes, confirmAction } from "./onehub.js";
 import { EVERYWHERE, isPaused, parseDuration, pause, resume } from "./pause.js";
 import { deleteSession, expireChatSessions, expireSession } from "./session.js";
@@ -100,6 +101,7 @@ async function processMessage(msg: Incoming, outbox: Outbox): Promise<void> {
   if (await confirmErrand(chat, msg.text, outbox)) return;
   if (await confirmGoogle(chat, msg.text, outbox)) return;
   if (await confirmHevy(chat, msg.text, outbox)) return;
+  if (await confirmGroupInvite(chat, msg.text, outbox)) return;
   if (await confirmAction(chat, msg.text, outbox)) return;
 
   if (!takeDailyQuota(chat.sender.number)) {
@@ -109,7 +111,7 @@ async function processMessage(msg: Incoming, outbox: Outbox): Promise<void> {
 
   const content = await toContent(msg);
   if (!content) return;
-  for (const notes of [errandNotes(chat), actionNotes(chat), googleNotes(chat), hevyNotes(chat)]) if (notes) content.unshift({ type: "text", text: notes });
+  for (const notes of [errandNotes(chat), actionNotes(chat), googleNotes(chat), hevyNotes(chat), groupWorkoutNote(chat)]) if (notes) content.unshift({ type: "text", text: notes });
   await respond(chat, content, outbox);
 }
 
@@ -362,6 +364,7 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
       if (result.removed) {
         await disconnect(result.removed.number, outbox.chatIdFor(result.removed.number));
         disconnectHevy(result.removed.number, outbox.chatIdFor(result.removed.number));
+        leaveGroupWorkouts(result.removed.number);
       }
       await toAdmin(result.removed ? `Removed ${result.removed.name}.` : (result.error ?? "Couldn't remove that contact."));
       return true;

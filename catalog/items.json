@@ -68,7 +68,7 @@
   {
     "id": "friday-12",
     "name": "Catatan Gym (Hevy)",
-    "description": "Hubungkan akun Hevy milikmu, lalu catat latihan lewat chat, voice note, atau foto catatan gym. Friday mengenali latihannya, menambah latihan baru kalau belum ada, menyusun program, dan membaca progresmu. Setiap perubahan dikonfirmasi dulu dengan kode.\n\nContoh: \"Catat ke Hevy: bench press 80 kg 3x8 tadi pagi\"",
+    "description": "Hubungkan akun Hevy milikmu, lalu catat latihan lewat chat, voice note, atau foto catatan gym. Friday mengenali latihannya, menambah latihan baru kalau belum ada, menyusun program, membaca progresmu, dan mengatur workout bareng teman yang saling mencatat set. Setiap perubahan dikonfirmasi dulu dengan kode.\n\nContoh: \"Catat ke Hevy: bench press 80 kg 3x8 tadi pagi\"",
     "image": "12-hevy.jpg"
   }
 ]
