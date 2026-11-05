@@ -80,7 +80,7 @@ function privacyPage(): string {
 <p>${bot} tidak menjual data, tidak memakainya untuk iklan atau penilaian kredit, dan tidak memakainya untuk melatih model AI umum.</p>
 
 <h2>Pesan di grup</h2>
-<p>Di grup, ${bot} biasanya hanya membaca pesan yang memanggilnya: yang menyebut ${bot}, membalas pesannya, atau diawali "${bot},". ${admin} bisa menyalakan konteks grup per grup dengan /konteks on, dan ${bot} mengumumkannya di grup itu. Selama menyala, pesan lain di grup itu disimpan di server paling lama 24 jam (${MAX_KEPT} pesan terakhir), lalu ikut dikirim ke Anthropic saat ${bot} dipanggil berikutnya dan menjadi bagian riwayat chat grup itu. Foto, file, dan voice note dari pesan tersebut tidak dibuka, hanya dicatat jenisnya. /konteks off menghentikannya dan menghapus pesan yang belum terpakai.</p>
+<p>Di grup, ${bot} biasanya hanya membaca pesan yang memanggilnya: yang menyebut ${bot}, membalas pesannya, atau diawali "${bot},". ${admin} bisa menyalakan konteks grup per grup dengan /context on, dan ${bot} mengumumkannya di grup itu. Selama menyala, pesan lain di grup itu disimpan di server paling lama 24 jam (${MAX_KEPT} pesan terakhir), lalu ikut dikirim ke Anthropic saat ${bot} dipanggil berikutnya dan menjadi bagian riwayat chat grup itu. Foto, file, dan voice note dari pesan tersebut tidak dibuka, hanya dicatat jenisnya. /context off menghentikannya dan menghapus pesan yang belum terpakai.</p>
 
 <h2>Pihak lain</h2>
 <p>Dengan persetujuanmu, isi yang dibaca ${bot} dikirim ke Anthropic (Claude) untuk diproses, karena fitur ini tidak bisa berjalan tanpa itu. Balasan dan pesanmu terkirim lewat WhatsApp. Data tidak dibagikan ke pihak lain, kecuali diwajibkan hukum.</p>

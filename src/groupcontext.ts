@@ -2,7 +2,7 @@ import { config } from "./config.js";
 import { db } from "./db.js";
 import type { ChatContext } from "./types.js";
 
-// Group context: in a group where the admin turned it on (/konteks on, announced in the group), Friday keeps the
+// Group context: in a group where the admin turned it on (/context on, announced in the group), Friday keeps the
 // messages that didn't call it, and hands them to Claude with the next message that does, so it knows what the
 // conversation is about. They're kept for a day at most, the newest few dozen only, and are gone once handed over
 // (from then on they're part of that group's chat history, like any message to Friday).

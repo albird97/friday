@@ -147,7 +147,7 @@ export const ADMIN_HELP = [
   "/remove <nama> — cabut izinnya",
   "/katalog — perbarui katalog WhatsApp Business",
   "/umumkan <teks> — kirim teks ini apa adanya ke semua kontak, tanpa nama pengirim (dari chat pribadi)",
-  "/konteks on | off — di grup: Friday ikut membaca pesan yang tidak menyebutnya, agar paham konteks (diumumkan di grup)",
+  "/context on | off — di grup: Friday ikut membaca pesan yang tidak menyebutnya, agar paham konteks (diumumkan di grup)",
   "",
   "_Rahasia (tidak terlihat orang lain):_",
   "/status — kesehatan, versi, biaya hari ini & bulan ini",
@@ -354,15 +354,15 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
       await toAdmin(`🤫 Friday diam di *${chat.chatName}* sampai ${formatDateTime(new Date(until))}.\nUntuk mengaktifkannya lebih cepat, kirim @Friday /bangun di grup itu.`);
       return true;
     }
-    case "/konteks": {
+    case "/context": {
       if (!admin) return false;
       if (!chat.isGroup) {
-        await toAdmin("Kirim /konteks on atau /konteks off di grupnya, misalnya: @Friday /konteks on");
+        await toAdmin("Kirim /context on atau /context off di grupnya, misalnya: @Friday /context on");
         return true;
       }
       const choice = args[0]?.toLowerCase();
       if (choice !== "on" && choice !== "off") {
-        await toAdmin(`👀 Konteks grup di *${chat.chatName}*: *${contextOn(chat.chatId) ? "on" : "off"}*\nFormat: /konteks on atau /konteks off`);
+        await toAdmin(`👀 Konteks grup di *${chat.chatName}*: *${contextOn(chat.chatId) ? "on" : "off"}*\nFormat: /context on atau /context off`);
         return true;
       }
       const on = choice === "on";

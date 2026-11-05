@@ -36,7 +36,7 @@ const photo: Media = { kind: "image", mimetype: "image/jpeg", size: 5, download:
 beforeEach(async () => {
   sent = [];
   claude.reset();
-  if (contextOn(GROUP)) await handleIncoming(say(ADMIN, "/konteks off"), outbox);
+  if (contextOn(GROUP)) await handleIncoming(say(ADMIN, "/context off"), outbox);
   db.prepare("DELETE FROM group_log").run();
   sent = [];
 });
@@ -52,7 +52,7 @@ describe("group context", () => {
   });
 
   it("once the admin turns it on, tells the group and hands the messages in between to Claude once", async () => {
-    await handleIncoming(say(ADMIN, "/konteks on"), outbox);
+    await handleIncoming(say(ADMIN, "/context on"), outbox);
     assert.equal(sent[0].chatId, GROUP, "the group is told");
     assert.match(sent[0].text, /ikut membaca semua pesan di grup ini[\s\S]*24 jam/);
     assert.equal(sent[1].chatId, `${ADMIN.number}@s.whatsapp.net`);
@@ -93,13 +93,13 @@ describe("group context", () => {
 
   it("only the admin can turn it on, and off forgets what was kept", async () => {
     answer("Hmm?");
-    await handleIncoming(say(WIFE, "/konteks on"), outbox);
+    await handleIncoming(say(WIFE, "/context on"), outbox);
     assert.equal(contextOn(GROUP), false);
 
-    await handleIncoming(say(ADMIN, "/konteks on"), outbox);
+    await handleIncoming(say(ADMIN, "/context on"), outbox);
     await handleIncoming(say(OTHER, "rahasia", false), outbox);
     sent = [];
-    await handleIncoming(say(ADMIN, "/konteks off"), outbox);
+    await handleIncoming(say(ADMIN, "/context off"), outbox);
     assert.match(sent[0].text, /kembali hanya membaca pesan yang memanggilnya/);
     assert.equal(sent[0].chatId, GROUP);
     assert.equal(logged(), 0);
@@ -107,7 +107,7 @@ describe("group context", () => {
     assert.equal(logged(), 0);
 
     sent = [];
-    await handleIncoming({ ...say(ADMIN, "/konteks on"), chat: { ...say(ADMIN, "").chat, chatId: `${ADMIN.number}@s.whatsapp.net`, isGroup: false } }, outbox);
-    assert.match(sent[0].text, /Kirim \/konteks on atau \/konteks off di grupnya/);
+    await handleIncoming({ ...say(ADMIN, "/context on"), chat: { ...say(ADMIN, "").chat, chatId: `${ADMIN.number}@s.whatsapp.net`, isGroup: false } }, outbox);
+    assert.match(sent[0].text, /Kirim \/context on atau \/context off di grupnya/);
   });
 });
