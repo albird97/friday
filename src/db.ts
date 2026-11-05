@@ -286,6 +286,7 @@ for (const [table, column, type] of [
   ["google_links", "kind", "TEXT NOT NULL DEFAULT 'main'"],
   ["reminders", "kind", "TEXT NOT NULL DEFAULT 'reminder'"],
   ["reminders", "chat_name", "TEXT"],
+  ["reminders", "last_said", "TEXT"],
 ] as const) {
   const columns = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
   if (!columns.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);

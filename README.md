@@ -123,7 +123,7 @@ Anyone in the contacts can set these up, in their private chat or in a group (wh
   asked: "every Friday at 5pm, send a poll on who's coming to futsal", "every weekday at 7, a summary of today's news",
   "on the 1st of every month, ask how much was spent on electricity". Each run is a Claude turn, so it costs like a
   message and counts toward that person's daily limit. Tasks repeat at most hourly, with 10 per person at most.
-  They stop when their owner is removed, and they don't run while Friday is stopped (`/stop`).
+  A run that finds nothing worth saying (no votes yet, nothing new since what it said last time) sends nothing. They stop when their owner is removed, and they don't run while Friday is stopped (`/stop`).
 
 "What's scheduled?" lists them with their numbers; "cancel #12" stops one. The admin can also set them up for a group
 from their private chat: "every Monday at 8, post 'Jangan lupa setor laporan' in the Kantor group".

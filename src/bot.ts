@@ -79,21 +79,33 @@ export function handleIncoming(msg: Incoming, outbox: Outbox): Promise<void> {
  * goes through the same pause, limits and permissions as if they had typed it then. It never starts with "/", so it
  * can't run a command. A task whose owner is no longer a contact stops.
  */
-export function runScheduledTask(task: Reminder, outbox: Outbox): Promise<void> {
+export async function runScheduledTask(task: Reminder, outbox: Outbox): Promise<void> {
   const owner = contactByNumber(task.created_by);
   if (!owner) {
     db.prepare("UPDATE reminders SET active = 0 WHERE id = ?").run(task.id);
-    return Promise.resolve();
+    return;
   }
   const isGroup = task.chat_id.endsWith("@g.us");
-  return handleIncoming(
+  const last =
+    task.last_said === null ? "" : task.last_said ? ` Your message the last time it ran: "${clip(task.last_said, 1500)}"` : " The last time it ran you sent nothing.";
+  // What Friday sends this time is kept, so the next run can tell what's new and stay quiet otherwise.
+  const said: string[] = [];
+  const watching: Outbox = {
+    ...outbox,
+    sendText: (chatId, text, replyTo) => {
+      if (chatId === task.chat_id) said.push(text);
+      return outbox.sendText(chatId, text, replyTo);
+    },
+  };
+  await handleIncoming(
     {
       chat: { chatId: task.chat_id, isGroup, chatName: task.chat_name ?? owner.name, sender: { ...owner, isContact: true } },
-      text: `[Scheduled task #${task.id} that ${owner.name} set up, due now: ${task.text}]`,
+      text: `[Scheduled task #${task.id} that ${owner.name} set up, due now: ${task.text}]${last}`,
       addressed: true,
     },
-    outbox,
+    watching,
   );
+  db.prepare("UPDATE reminders SET last_said = ? WHERE id = ?").run(said.join("\n"), task.id);
 }
 
 async function processMessage(msg: Incoming, outbox: Outbox): Promise<void> {

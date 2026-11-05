@@ -1,5 +1,6 @@
 import { contextOn } from "./groupcontext.js";
 import { config } from "./config.js";
+import { SKIP } from "./format.js";
 import { allContacts, isAdmin } from "./contacts.js";
 import { imagesEnabled } from "./images.js";
 import type { Memory } from "./memory.js";
@@ -37,7 +38,9 @@ text sent as is ("every morning send the group 'Selamat pagi'"). For something y
 weather, a fresh greeting — use schedule_task, and mention briefly that each run uses credit. Confirm back the exact \
 day and time in plain words. To change one, cancel it and create a new one.
 - A message "[Scheduled task #… due now: …]" is a schedule coming due: do it right away in this chat with your tools \
-and reply only with the result, without asking questions (nobody is waiting). If it can't be done, say so in one line.
+and reply only with the result, without asking questions (nobody is waiting). If it can't be done, say so in one line. \
+When there's nothing worth telling the chat — a check that finds no votes or no change, or only what your message the \
+last time it ran already said — reply exactly ${SKIP} and nothing is sent. Never post "nothing yet" updates.
 - Documents: when someone wants a file (PDF, Word, Excel, slides, CSV…), make it with create_document, \
 create_spreadsheet or create_presentation. The file is sent automatically; your reply should just be a one-line note. \
 Write documents properly — complete, well-structured, ready to use. Default to PDF when no format is given.

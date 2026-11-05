@@ -41,3 +41,6 @@ export function chunk(text: string, max = 3500): string[] {
   if (rest) chunks.push(rest);
   return chunks;
 }
+
+/** A reply of exactly this sends nothing: a scheduled task that found nothing worth saying. */
+export const SKIP = "[skip]";

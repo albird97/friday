@@ -21,9 +21,11 @@ export type Reminder = {
   kind: Kind;
   /** The group's name for schedules set up for a group from elsewhere; otherwise null. */
   chat_name: string | null;
+  /** For a task: what Friday sent the last time it ran ("" for nothing), so it can skip repeating itself. */
+  last_said: string | null;
 };
 
-const COLUMNS = "id, chat_id, created_by, text, due_at, cron, kind, chat_name";
+const COLUMNS = "id, chat_id, created_by, text, due_at, cron, kind, chat_name, last_said";
 
 /** Each task run costs a Claude turn, so a person keeps a handful at most, repeating at most hourly. */
 export const MAX_TASKS = 10;
@@ -79,6 +81,7 @@ export function createReminder(input: {
     cron: input.cron ?? null,
     kind,
     chat_name: input.chatName ?? null,
+    last_said: null,
   };
 }
 

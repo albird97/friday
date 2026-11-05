@@ -101,6 +101,28 @@ describe("scheduled messages and tasks", () => {
     assert.deepEqual(sent, [{ chatId: GROUP.id, text: "Ini rangkuman minggu ini." }]);
   });
 
+  it("lets a task stay quiet, and tells the next run what the last one said", async () => {
+    const task = createReminder({ chatId: GROUP.id, createdBy: ADMIN.number, text: "cek poll, umumkan kalau ada vote", cron: "0 * * * *", kind: "task", chatName: GROUP.name });
+    const due = () => db.prepare("SELECT * FROM reminders WHERE id = ?").get(task.id) as Reminder;
+    const userText = () => claude.requests.at(-1)!.body.messages.at(-1).content.findLast((b: any) => b.type === "text").text as string;
+
+    claude.replies.push({ content: [{ type: "text", text: "[skip]" }], stop_reason: "end_turn" });
+    await runScheduledTask(due(), outbox);
+    assert.deepEqual(sent, [], "nothing to say, nothing sent");
+    assert.match(JSON.stringify(claude.requests[0].body.system), /reply exactly \[skip\]/);
+
+    claude.replies.push({ content: [{ type: "text", text: "Budi ikut 🎉" }], stop_reason: "end_turn" });
+    await runScheduledTask(due(), outbox);
+    assert.match(userText(), /The last time it ran you sent nothing\./);
+    assert.deepEqual(sent, [{ chatId: GROUP.id, text: "Budi ikut 🎉" }]);
+
+    claude.replies.push({ content: [{ type: "text", text: " [skip]\n" }], stop_reason: "end_turn" });
+    await runScheduledTask(due(), outbox);
+    assert.match(userText(), /Your message the last time it ran: "Budi ikut 🎉"/);
+    assert.equal(sent.length, 1);
+    assert.equal(due().last_said, "");
+  });
+
   it("stops a task whose owner is no longer a contact", async () => {
     const task = createReminder({ chatId: "chat-a", createdBy: "6280000000000", text: "berita pagi", cron: "0 7 * * *", kind: "task" });
     await runScheduledTask(task, outbox);

@@ -7,7 +7,7 @@ import type {
   BetaToolUseBlock,
 } from "@anthropic-ai/sdk/resources/beta/messages/messages.js";
 import { config } from "./config.js";
-import { chunk, toWhatsApp } from "./format.js";
+import { chunk, SKIP, toWhatsApp } from "./format.js";
 import { memoriesFor, SHARED } from "./memory.js";
 import { currentModel } from "./model.js";
 import { recordTool, recordTurn, type Outcome } from "./monitor.js";
@@ -103,11 +103,8 @@ async function runTurn(session: Session, conv: Conversation): Promise<boolean> {
 
     session.messages.push({ role: "assistant", content: echoable(response.content) });
 
-    const text = toWhatsApp(
-      response.content
-        .flatMap((b) => (b.type === "text" ? [b.text] : []))
-        .join(""),
-    );
+    const raw = response.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("");
+    const text = raw.trim() === SKIP ? "" : toWhatsApp(raw);
     if (text) await conv.say(text);
 
     if (response.stop_reason === "pause_turn") continue; // server-side web tools want another round
