@@ -195,7 +195,7 @@ describe("secret admin commands", () => {
 
     sent = [] as Sent[];
     await handleIncoming(dm(ADMIN, "/switch semua"), outbox);
-    assert.match(sent[0].text!, /Model semua chat: \*claude-sonnet-5-5\*[\s\S]*Pilihan: opus, sonnet, haiku/);
+    assert.match(sent[0].text!, /Model semua chat: \*claude-sonnet-5-5\*[\s\S]*Pilihan: opus, sonnet, haiku, fable/);
     await handleIncoming(dm(ADMIN, "/switch semua gemini"), outbox);
     assert.match(sent[1].text!, /tidak ada/);
     await handleIncoming(dm(ADMIN, "/switch semua sonnet"), outbox);
@@ -204,6 +204,8 @@ describe("secret admin commands", () => {
 
     await handleIncoming(dm(ADMIN, "/switch semua haiku"), outbox);
     assert.equal(currentModel(), "claude-haiku-5-5");
+    await handleIncoming(dm(ADMIN, "/switch semua fable"), outbox);
+    assert.equal(currentModel(), "claude-fable-5-1");
     await handleIncoming(dm(ADMIN, "/switch semua opus"), outbox);
     assert.equal(currentModel(), "claude-opus-5-5");
   });
@@ -212,8 +214,10 @@ describe("secret admin commands", () => {
     const other = { ...inGroup(ADMIN, "Friday, halo"), chat: { ...inGroup(ADMIN, "").chat, chatId: "120363000000000002@g.us", chatName: "Keluarga" } };
     sent = [] as Sent[];
     await handleIncoming(inGroup(ADMIN, "/switch haiku"), outbox);
-    assert.equal(sent[0].chatId, private_(ADMIN.number), "the group sees nothing");
+    assert.equal(sent[0].chatId, private_(ADMIN.number), "the details go to the admin");
     assert.match(sent[0].text!, /\*Kongkow\* sekarang memakai \*claude-haiku-5-5\*/);
+    assert.deepEqual([sent[1].chatId, sent[1].text], [GROUP, "🧠 Friday di grup ini sekarang memakai *claude-haiku-5-5*."], "the group sees it changed");
+    assert.equal(sent.length, 2);
 
     for (const [incoming, model] of [[inGroup(ADMIN, "Friday, halo"), "claude-haiku-5-5"], [other, "claude-opus-5-5"], [dm(ADMIN, "halo"), "claude-opus-5-5"]] as const) {
       answer("Halo.");
@@ -221,7 +225,9 @@ describe("secret admin commands", () => {
       assert.equal(claude.requests.at(-1)!.body.model, model);
     }
 
+    sent = [] as Sent[];
     await handleIncoming(inGroup(ADMIN, "/switch semua sonnet"), outbox);
+    assert.deepEqual(sent.map((m) => m.chatId), [private_(ADMIN.number)], "this group's model didn't change, so it hears nothing");
     answer("Halo.");
     await handleIncoming(inGroup(ADMIN, "Friday, halo"), outbox);
     assert.equal(claude.requests.at(-1)!.body.model, "claude-haiku-5-5", "its own choice outlasts a change for everyone");
@@ -231,6 +237,7 @@ describe("secret admin commands", () => {
     assert.match(sent[0].text!, /Model di \*Kongkow\*: \*claude-haiku-5-5\*\nDefault semua chat: \*claude-sonnet-5-5\*/);
     await handleIncoming(inGroup(ADMIN, "/switch default"), outbox);
     assert.match(sent[1].text!, /kembali ikut model default, \*claude-sonnet-5-5\*/);
+    assert.deepEqual([sent[2].chatId, sent[2].text], [GROUP, "🧠 Friday di grup ini sekarang memakai *claude-sonnet-5-5*."]);
     answer("Halo.");
     await handleIncoming(inGroup(ADMIN, "Friday, halo"), outbox);
     assert.equal(claude.requests.at(-1)!.body.model, "claude-sonnet-5-5");
@@ -276,6 +283,7 @@ describe("secret admin commands", () => {
     assert.equal(newestOf("opus", ids), "claude-opus-5-5");
     assert.equal(newestOf("opus", [...ids, "claude-opus-6"]), "claude-opus-6");
     assert.equal(newestOf("haiku", ids), "claude-haiku-4-5-20251001");
+    assert.equal(newestOf("fable", [...ids, "claude-fable-5"]), "claude-fable-5-1");
     assert.equal(newestOf("sonnet", ["claude-opus-5"]), undefined);
   });
 

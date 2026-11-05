@@ -73,7 +73,7 @@ function sse(reply: ScriptedReply): string {
 
 const server = http.createServer((req, res) => {
   if (req.method === "GET" && req.url?.startsWith("/v1/models")) {
-    const data = ["claude-opus-4-5-20251101", "claude-opus-5", "claude-opus-5-5", "claude-sonnet-5", "claude-sonnet-5-5", "claude-haiku-5-5"].map((id) => ({
+    const data = ["claude-opus-4-5-20251101", "claude-opus-5", "claude-opus-5-5", "claude-sonnet-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5", "claude-fable-5-1"].map((id) => ({
       id,
       type: "model",
       display_name: id,

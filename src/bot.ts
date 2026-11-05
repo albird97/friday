@@ -149,8 +149,8 @@ export const ADMIN_HELP = [
   "/style chill | formal | funny | ngeyel | normal — gaya bicara di chat itu (/gaya juga bisa)",
   "/diam 30m | 2j | 1h — di grup: Friday diam sementara (h = hari)",
   "/bangun — di grup: akhiri /diam",
-  "/switch opus | sonnet | haiku | default — ganti model di chat itu saja (selalu versi terbaru)",
-  "/switch semua opus | sonnet | haiku — ganti model semua chat yang tidak memilih sendiri",
+  "/switch opus | sonnet | haiku | fable | default — ganti model di chat itu saja (selalu versi terbaru; fable ±2,5× harga opus)",
+  "/switch semua opus | sonnet | haiku | fable — ganti model semua chat yang tidak memilih sendiri",
   "/stop — darurat: Friday diam di semua chat",
   "/lanjut — nyalakan lagi setelah /stop",
   "/backup — kirim cadangan database",
@@ -178,7 +178,7 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
           ...(hevyEnabled ? ["/hevy — hubungkan Hevy untuk mencatat latihan gym (/hevy putus untuk memutus)"] : []),
           ...(spotifyEnabled ? ["/spotify — hubungkan Spotify milikmu untuk membuat playlist (/spotify bareng <nama> untuk playlist bareng)"] : []),
           ...(shopeeEnabled ? ["/shopee — hubungkan toko Shopee milikmu untuk menanyakan pesanan, pendapatan, stok, dan retur"] : []),
-          ...(!admin && !chat.isGroup && config.switchUsers.includes(chat.sender.number) ? ["/switch opus | sonnet | haiku | default — pilih model Claude untuk chat ini"] : []),
+          ...(!admin && !chat.isGroup && config.switchUsers.includes(chat.sender.number) ? ["/switch opus | sonnet | haiku | fable | default — pilih model Claude untuk chat ini"] : []),
           // The admin sees every command, the unlisted ones too, but only in their private chat.
           ...(admin && !chat.isGroup ? ["", ...ADMIN_HELP] : []),
         ].join("\n"),
@@ -387,6 +387,12 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
       const here = chat.isGroup ? `*${chat.chatName}*` : "chat ini";
       const Here = chat.isGroup ? here : "Chat ini";
       const options = `Pilihan: ${FAMILIES.join(", ")}${everywhere ? "" : ", default"}\nContoh: /switch ${everywhere ? "semua " : ""}sonnet`;
+      // In a group the admin's details go to their private chat, but the group also sees that its model changed.
+      const before = currentModel(chat.chatId);
+      const confirmInGroup = async () => {
+        const now = currentModel(chat.chatId);
+        if (chat.isGroup && now !== before) await reply(`🧠 Friday di grup ini sekarang memakai *${now}*.`);
+      };
       if (!family) {
         const own = chatModel(chat.chatId);
         const lines = [
@@ -401,6 +407,7 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
         setChatModel(chat.chatId, undefined);
         expireSession(chat.chatId);
         await answer(`🧠 ${Here} kembali ikut model default, *${currentModel()}*, mulai pesan berikutnya.`);
+        await confirmInGroup();
         return true;
       }
       if (!isFamily(family)) {
@@ -422,6 +429,7 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
           expireSession(chat.chatId);
           await answer(`🧠 ${Here} sekarang memakai *${model}*, mulai pesan berikutnya. Obrolan lanjut dari ringkasan singkat. Kembali ke default dengan /switch default.`);
         }
+        await confirmInGroup();
       } catch (err) {
         await answer(`⚠️ Model gagal diganti: ${err instanceof Error ? err.message : String(err)}`);
       }

@@ -5,10 +5,10 @@ import { db } from "./db.js";
 // Which Claude model answers. /switch picks a family for one chat, or for every chat without its own choice; Friday
 // always runs that family's newest version, looked up from the Models API. Choices are stored, so they outlive a restart.
 
-export const FAMILIES = ["opus", "sonnet", "haiku"] as const;
+export const FAMILIES = ["opus", "sonnet", "haiku", "fable"] as const;
 export type Family = (typeof FAMILIES)[number];
 
-const ID = /^claude-(opus|sonnet|haiku)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/;
+const ID = /^claude-(opus|sonnet|haiku|fable)-(\d+)(?:-(\d{1,2}))?(?:-\d{8})?$/;
 
 export function isFamily(name: string): name is Family {
   return (FAMILIES as readonly string[]).includes(name);
