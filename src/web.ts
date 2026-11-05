@@ -1,4 +1,5 @@
 import http from "node:http";
+import { handleAdmin, isAdminPath } from "./admin/server.js";
 import { config } from "./config.js";
 import { allContacts } from "./contacts.js";
 import { finishConnect } from "./google.js";
@@ -88,6 +89,7 @@ function privacyPage(): string {
 <h2>Penyimpanan dan keamanan</h2>
 <p>Token akses Google, Spotify, dan Shopee, serta API key Hevy, disimpan terenkripsi di server ${bot}, dan koneksi memakai HTTPS. API key Hevy tidak pernah dikirim ke Anthropic. Isi yang dibaca ${bot} tersimpan di riwayat chat di server yang sama, dan bisa ikut masuk ke cadangan harian.</p>
 <p>${admin} mengelola server itu, jadi secara teknis punya jalur ke data tersebut. ${admin} tidak membaca data Google, Spotify, Shopee, atau Hevy pengguna, kecuali kamu memintanya, atau diperlukan untuk keamanan, perbaikan penyalahgunaan, atau kewajiban hukum.</p>
+<p>Supaya ${admin} bisa memantau apakah ${bot} berjalan baik, server mencatat kapan tiap pesan dijawab, di chat mana, untuk siapa, berapa lama, dan apakah berhasil, beserta perkiraan biayanya, tanpa isi pesannya. Catatan ini disimpan paling lama 180 hari dan hanya bisa dilihat ${admin} di dashboard pengelola.</p>
 
 <h2>Memutus akses dan menghapus data</h2>
 <p>Kirim /spotify putus untuk memutus Spotify, mencabut semua izin playlist bareng, dan menghapus riwayat chat pribadimu di server. Cabut juga dari sisi Spotify di <a href="https://www.spotify.com/account/apps/">pengaturan akun Spotify</a>.</p>
@@ -128,6 +130,11 @@ export async function handleWeb(method: string, url: string, outbox: Outbox): Pr
 
 export function startWeb(outbox: Outbox): http.Server {
   const server = http.createServer((req, res) => {
+    // The dashboard answers everything under /admin itself: its methods, headers, cookies and errors.
+    if (isAdminPath(URL.parse(req.url ?? "/", "http://localhost")?.pathname ?? "")) {
+      void handleAdmin(req, res, outbox);
+      return;
+    }
     void handleWeb(req.method ?? "GET", req.url ?? "/", outbox)
       .catch((err) => {
         console.error("Web request failed:", err instanceof Error ? err.message : "unknown error");

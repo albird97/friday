@@ -8,6 +8,7 @@
 #   sudo scripts/linux-service.sh restart    # after changing /opt/friday/app/.env
 #   sudo scripts/linux-service.sh logs       # follow the log (Ctrl+C to stop following)
 #   sudo scripts/linux-service.sh backup     # back up data now (also runs daily at 03:30 into /opt/friday/backups)
+#   sudo scripts/linux-service.sh admin      # the dashboard's sign-in (PUBLIC_URL/admin): username and password
 #   sudo scripts/linux-service.sh uninstall  # stop and remove the service (keeps /opt/friday)
 set -euo pipefail
 
@@ -18,11 +19,20 @@ REPO="${FRIDAY_REPO:-https://github.com/albird97/friday.git}"
 NODE_VERSION="22.23.4"
 NODE_DIR="$HOME_DIR/node"
 UNIT="/etc/systemd/system/$NAME.service"
+ENV="$APP/.env"
 
 [ "$(id -u)" = 0 ] || { echo "Run with sudo." >&2; exit 1; }
 cd / # the friday user can't read the caller's home directory
 
 as_friday() { sudo -u "$NAME" env HOME="$HOME_DIR" PATH="$NODE_DIR/bin:/usr/bin:/bin" "$@"; }
+
+# Sets one variable in .env and keeps the rest. Rewritten in place, so the file keeps its owner and permissions.
+set_env() {
+  grep -v "^$1=" "$ENV" > "$ENV.new" || true
+  printf '%s=%s\n' "$1" "$2" >> "$ENV.new"
+  cat "$ENV.new" > "$ENV"
+  rm -f "$ENV.new"
+}
 
 install_node() {
   [ "$("$NODE_DIR/bin/node" -v 2>/dev/null)" = "v$NODE_VERSION" ] && return
@@ -183,6 +193,27 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
+    # The dashboard. Friday sends its own security headers there, and any add_header in a location stops nginx from
+    # adding the server-level ones on top of them: these add only the one Friday leaves to nginx.
+    location = /admin {
+        limit_except GET POST { deny all; }
+        client_max_body_size 16k;
+        add_header Cross-Origin-Resource-Policy same-origin always;
+        proxy_pass http://127.0.0.1:3210;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Real-IP \$remote_addr;
+    }
+    location ^~ /admin/ {
+        limit_except GET POST { deny all; }
+        client_max_body_size 16k;
+        add_header Cross-Origin-Resource-Policy same-origin always;
+        proxy_pass http://127.0.0.1:3210;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Real-IP \$remote_addr;
+    }
+
     location ^~ /_astro/ {
         add_header Cache-Control "public, max-age=31536000, immutable" always;
         add_header X-Content-Type-Options nosniff always;
@@ -214,13 +245,6 @@ EOF
   google)
     # Sets up Google sign-in. Reads the secret without showing it; the token key is made here and never printed.
     DOMAIN="${2:?Usage: sudo $0 google <domain>}"
-    ENV="$APP/.env"
-    set_env() {
-      grep -v "^$1=" "$ENV" > "$ENV.new" || true
-      printf '%s=%s\n' "$1" "$2" >> "$ENV.new"
-      cat "$ENV.new" > "$ENV"
-      rm -f "$ENV.new"
-    }
     read -r -p "Google client ID: " CLIENT_ID
     read -r -s -p "Google client secret (hidden): " CLIENT_SECRET
     echo
@@ -234,14 +258,7 @@ EOF
     ;;
   spotify)
     # Sets up Spotify sign-in, after `google` (it shares PUBLIC_URL and the token key). Reads the secret without showing it.
-    ENV="$APP/.env"
     grep -q '^PUBLIC_URL=https://' "$ENV" || { echo "Run '$0 google <domain>' first." >&2; exit 1; }
-    set_env() {
-      grep -v "^$1=" "$ENV" > "$ENV.new" || true
-      printf '%s=%s\n' "$1" "$2" >> "$ENV.new"
-      cat "$ENV.new" > "$ENV"
-      rm -f "$ENV.new"
-    }
     read -r -p "Spotify client ID: " CLIENT_ID
     read -r -s -p "Spotify client secret (hidden): " CLIENT_SECRET
     echo
@@ -254,14 +271,7 @@ EOF
   shopee)
     # Sets up Shopee shop linking, after `google` (it shares PUBLIC_URL and the token key). Reads the key without showing
     # it. Add "sandbox" to use Shopee's test environment until the app is live.
-    ENV="$APP/.env"
     grep -q '^PUBLIC_URL=https://' "$ENV" || { echo "Run '$0 google <domain>' first." >&2; exit 1; }
-    set_env() {
-      grep -v "^$1=" "$ENV" > "$ENV.new" || true
-      printf '%s=%s\n' "$1" "$2" >> "$ENV.new"
-      cat "$ENV.new" > "$ENV"
-      rm -f "$ENV.new"
-    }
     read -r -p "Shopee partner ID: " PARTNER_ID
     read -r -s -p "Shopee partner key (hidden): " PARTNER_KEY
     echo
@@ -275,6 +285,34 @@ EOF
     grep -q '^GOOGLE_TOKEN_KEY=[0-9a-f]\{64\}$' "$ENV" || set_env GOOGLE_TOKEN_KEY "$(openssl rand -hex 32)"
     systemctl restart "$NAME"
     echo "Shopee shop linking is on. Friday restarted."
+    ;;
+  admin)
+    # The dashboard's sign-in at PUBLIC_URL/admin; run it again to change the password. .env keeps only a scrypt hash
+    # of the password, and a new one signs every browser out. Neither the password nor its hash is ever shown.
+    grep -q '^PUBLIC_URL=https://' "$ENV" || {
+      echo "The dashboard needs Friday's HTTPS address in $ENV (PUBLIC_URL=https://…): set up '$0 web <domain>' and '$0 google <domain>' first." >&2
+      exit 1
+    }
+    CURRENT="$(grep '^ADMIN_USER=' "$ENV" | tail -n 1 | cut -d= -f2- || true)"
+    read -r -p "Dashboard username${CURRENT:+ [$CURRENT]}: " ADMIN_NAME
+    ADMIN_NAME="${ADMIN_NAME:-$CURRENT}"
+    [[ "$ADMIN_NAME" =~ ^[A-Za-z0-9._@-]{2,40}$ ]] || { echo "Use 2 to 40 letters, digits, dots, dashes, underscores or @. Nothing changed." >&2; exit 1; }
+    read -r -s -p "New password (hidden, at least 10 characters): " PASSWORD
+    echo
+    read -r -s -p "The same password again: " AGAIN
+    echo
+    [ "$PASSWORD" = "$AGAIN" ] || { echo "The passwords don't match. Nothing changed." >&2; exit 1; }
+    [ "${#PASSWORD}" -ge 10 ] || { echo "Use at least 10 characters. Nothing changed." >&2; exit 1; }
+    # From the app folder, where tsx is installed (this script runs from /).
+    HASH="$(cd "$APP" && printf '%s' "$PASSWORD" | as_friday "$NODE_DIR/bin/node" --import tsx src/admin/password.ts)" || HASH=""
+    unset PASSWORD AGAIN
+    [[ "$HASH" == scrypt:* ]] || { echo "Couldn't hash the password. Nothing changed." >&2; exit 1; }
+    set_env ADMIN_USER "$ADMIN_NAME"
+    set_env ADMIN_PASSWORD_HASH "$HASH"
+    systemctl restart "$NAME"
+    URL="$(grep '^PUBLIC_URL=' "$ENV" | tail -n 1 | cut -d= -f2-)"
+    echo "Dashboard sign-in saved for $ADMIN_NAME. Friday restarted, so every browser that was signed in is signed out."
+    echo "Open ${URL%/}/admin"
     ;;
   logs)
     journalctl -u "$NAME" -n 50 -f -o cat
@@ -290,7 +328,7 @@ EOF
     echo "Friday's service is removed. Its files are still in $HOME_DIR."
     ;;
   *)
-    echo "Usage: sudo $0 install|update|restart|logs|backup|web|google|spotify|shopee|uninstall" >&2
+    echo "Usage: sudo $0 install|update|restart|logs|backup|web|google|spotify|shopee|admin|uninstall" >&2
     exit 1
     ;;
 esac

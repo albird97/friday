@@ -37,8 +37,8 @@ export interface Outbox {
   setProfilePicture?(image: Buffer): Promise<void>;
   /** Sends a poll; returns its message id and the secret its votes are encrypted with (WhatsApp only). */
   sendPoll?(chatId: string, poll: { question: string; options: string[]; multiple: boolean }): Promise<{ messageId: string; secret: Buffer }>;
-  /** The groups the bot is in. */
-  groups?(): Promise<{ id: string; name: string }[]>;
+  /** The groups the bot is in; size = members besides the bot, when known. */
+  groups?(): Promise<{ id: string; name: string; size?: number }[]>;
   /** How many people besides the bot are in a group; undefined when unknown. */
   groupSize?(chatId: string): Promise<number | undefined>;
   /** The bot's own WhatsApp Business catalog. */

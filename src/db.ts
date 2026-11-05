@@ -232,6 +232,51 @@ db.exec(`
     chat_name   TEXT NOT NULL,
     style       TEXT NOT NULL
   );
+  -- For the dashboard (/admin): one row per message Friday answered (a Claude turn), never what was written.
+  -- chat_id is the conversation key (a chat id, or "errand:12"); number/name is whose usage it is; outcome is
+  -- ok, refused or failed; ms is how long the answer took.
+  CREATE TABLE IF NOT EXISTS turns (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    at          INTEGER NOT NULL,
+    day         TEXT NOT NULL,
+    chat_id     TEXT NOT NULL,
+    chat_name   TEXT NOT NULL,
+    number      TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    ms          INTEGER NOT NULL,
+    outcome     TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS turns_at ON turns (at);
+  CREATE INDEX IF NOT EXISTS turns_day ON turns (day, chat_id);
+  -- Tool calls per day (a voice note transcribed counts as the pseudo-tool "voice_note").
+  CREATE TABLE IF NOT EXISTS tool_usage (
+    day         TEXT NOT NULL,
+    tool        TEXT NOT NULL,
+    calls       INTEGER NOT NULL DEFAULT 0,
+    errors      INTEGER NOT NULL DEFAULT 0,
+    total_ms    INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, tool)
+  );
+  -- Dashboard sign-ins. id = SHA-256 of the cookie's random token (the token itself is never stored); credential =
+  -- a fingerprint of the username and password hash it was made with, so a new password signs every browser out.
+  CREATE TABLE IF NOT EXISTS admin_sessions (
+    id          TEXT PRIMARY KEY,
+    csrf        TEXT NOT NULL,
+    credential  TEXT NOT NULL,
+    created_at  INTEGER NOT NULL,
+    seen_at     INTEGER NOT NULL,
+    expires_at  INTEGER NOT NULL,
+    ip          TEXT NOT NULL,
+    agent       TEXT NOT NULL
+  );
+  -- result: ok, wrong (bad username or password) or blocked (too many tries).
+  CREATE TABLE IF NOT EXISTS admin_logins (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    at          INTEGER NOT NULL,
+    ip          TEXT NOT NULL,
+    agent       TEXT NOT NULL,
+    result      TEXT NOT NULL
+  );
 `);
 
 // Columns added after a table first shipped: SQLite's CREATE TABLE IF NOT EXISTS won't add them to an existing one.

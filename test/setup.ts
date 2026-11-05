@@ -9,6 +9,8 @@ import path from "node:path";
 
 export const ADMIN = { name: "Albert", number: "6281111111111" };
 export const WIFE = { name: "Sarah", number: "6282222222222" };
+/** The dashboard's sign-in (/admin). */
+export const DASHBOARD = { username: "admin", password: "uji-dashboard-2026" };
 
 process.env.DOTENV_CONFIG_PATH = path.join(os.tmpdir(), "friday-no-dotenv"); // never read the real .env
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "friday-test-"));
@@ -29,6 +31,10 @@ process.env.SHOPEE_PARTNER_KEY = "shopee-key";
 process.env.PUBLIC_URL = "https://friday.test/";
 process.env.CLOUDFLARE_ACCOUNT_ID = "test-account";
 process.env.CLOUDFLARE_API_TOKEN = "test-token";
+process.env.ADMIN_USER = DASHBOARD.username;
+// DASHBOARD.password through hashPassword (src/admin/password.ts), made once: hashing is slow on purpose.
+process.env.ADMIN_PASSWORD_HASH = "scrypt:16384:8:1:g__vaVTSBBlWTt0mDqRtKA:rz3DuxVLybfPppwdF4bX7B9cFh8UB-G1_o-vZABUj50";
+process.env.BACKUP_DIR = path.join(process.env.DATA_DIR, "backups"); // never the server's real /opt/friday/backups
 
 type Block = Record<string, unknown> & { type: string };
 export type ScriptedReply = { content: Block[]; stop_reason: string; status?: number };

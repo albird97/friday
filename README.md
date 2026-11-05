@@ -160,6 +160,48 @@ Not listed in `/help` (admin only; answers always go to the admin's private chat
 | `/style [chill \| formal \| funny \| ngeyel \| normal]` | How Friday talks in this chat (group or private). `ngeyel` is devil's advocate: it argues against whatever is said, but still does tasks properly, never invents facts, answers in one voice (no separate "serious" part) and on health, safety, legal and money always argues for the careful side. Takes effect from the next message; `/style` alone shows the current one |
 | `/backup` | Send the admin a copy of Friday's database (contacts, memories, reminders, polls, conversations, usage; not the WhatsApp login) |
 
+## Dashboard
+
+The admin can watch Friday in a browser at `https://<domain>/admin` (https://fridayai.my.id/admin), on a phone or a
+laptop, in Indonesian, light or dark. It refreshes itself every 30 seconds and shows:
+
+- **Ringkasan:** whether everything is fine, and if not, what needs a look, worst first (WhatsApp disconnected, Claude
+  failing, spending past the alert, schedules stuck, memory or disk nearly full, an old backup, failed sign-ins, people
+  asking for access). The WhatsApp connection, Claude's last answer, the next schedule and the server at a glance, and
+  today's and this month's cost (with the month-end estimate), messages, reply time and people helped.
+- **Biaya:** cost per day against the alert line, per person, per model, tokens, web searches and what the cache saved.
+- **Aktivitas:** messages per day (private and group), reply times, a day-and-hour map of when Friday is busy (the
+  quietest hour is the time to deploy), and which tools Claude uses and how often they fail.
+- **Orang** and **Grup:** every contact with today's quota, messages, cost, last activity, linked accounts, own model and
+  style; guests who use Friday in groups; website access requests with the `/add` command to copy; every group with its
+  context setting, pause, model and schedules.
+- **Jadwal**, **Fitur**, **Sistem**, **Keamanan:** upcoming schedules, what's switched on and how much it's used, memory,
+  disk, load, version, backups, the WhatsApp connection log and recent errors, and who is signed in to the dashboard.
+
+Charts and tables follow the 7, 30 or 90 days picked at the top. A few actions are there too: stop Friday everywhere
+(asked to confirm first) and start it again, both reported to the admin on WhatsApp like `/stop` and `/lanjut`; wake a
+group quieted with `/diam`; and sign other browsers out.
+
+It never shows what anyone wrote: no messages, memories, errand briefs, or Google, Spotify, Shopee or Hevy data, and
+other people's private schedules appear without their text. To fill the charts Friday keeps a `turns` row per answered
+message (when, which chat, whose, how long, whether it worked; 180 days) and tool calls per day (`tool_usage`, 400
+days); recent errors and the connection log live in memory only.
+
+Set the username and password on the server, which also turns the dashboard on (it needs `PUBLIC_URL`):
+
+```bash
+sudo /opt/friday/app/scripts/linux-service.sh admin
+```
+
+It asks for a username and the password twice (hidden, at least 10 characters) and stores only a scrypt hash in `.env`
+(`ADMIN_USER`, `ADMIN_PASSWORD_HASH`). Run it again to change either; that signs every browser out. nginx passes
+`/admin` to Friday from the site `linux-service.sh web <domain>` writes, so rerun that once after updating to this
+version.
+
+Sign-ins last 7 days of inactivity, 30 at most, in an HttpOnly, SameSite=Strict cookie. Five wrong tries from one IP
+block it for 15 minutes, and 30 from anywhere pause every sign-in for 15 minutes; the admin gets a WhatsApp message on
+each sign-in and each block. Forms carry a per-session token and must come from the dashboard's own address.
+
 ## Errands with people outside the contacts
 
 People listed in `ERRAND_USERS` can ask Friday, in their private chat, to deal with someone who isn't a contact —
@@ -385,7 +427,8 @@ npm test        # first time: npx playwright install chromium webkit
 
 `scripts/deploy-website.sh` builds on your machine and copies the result to the server, because that server also runs
 other production apps. On the server, `sudo /opt/friday/app/scripts/linux-service.sh web <domain>` writes the nginx
-site: static files for the page, while `/privacy` and `/oauth/` go to Friday itself on `WEB_PORT`.
+site: static files for the page, while `/privacy`, `/oauth/` and the dashboard (`/admin`) go to Friday itself on
+`WEB_PORT`.
 
 ## Development
 
@@ -397,4 +440,6 @@ npm run dev       # restart on file changes
 
 Code map: `src/whatsapp.ts` (WhatsApp connection) → `src/bot.ts` (access, commands, attachments) → `src/agent.ts`
 (Claude loop) → `src/tools.ts` (reminders, memory, documents, images, messages). Documents are rendered locally in
-`src/docs/`; images go through `src/images.ts`; market analysis lives in `src/market/`.
+`src/docs/`; images go through `src/images.ts`; market analysis lives in `src/market/`. The dashboard is `src/admin/`:
+`data.ts` builds a snapshot from the database and `src/monitor.ts`, `view.ts` draws it (no I/O), `server.ts` and
+`auth.ts` handle sign-in and requests.

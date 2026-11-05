@@ -1,14 +1,16 @@
 import { handleIncoming, idle, runScheduledTask } from "./bot.js";
 import { config } from "./config.js";
 import { imageProvider, pruneImages } from "./images.js";
-import { hideSignalSessionDumps } from "./logging.js";
+import { hideSignalSessionDumps, keepRecentProblems } from "./logging.js";
 import { chatModels, currentModel, familyOf, latestModel, setChatModel, setModel, type Family } from "./model.js";
+import { pruneMonitor } from "./monitor.js";
 import { startReminderLoop } from "./reminders.js";
 import { startWeb } from "./web.js";
 import { expireChatSessions, expireSession } from "./session.js";
 import { onUsageAlert } from "./usage.js";
 import { startWhatsApp } from "./whatsapp.js";
 
+keepRecentProblems();
 hideSignalSessionDumps();
 
 if (!process.env.ANTHROPIC_API_KEY) {
@@ -23,6 +25,8 @@ console.log(
   `Starting ${config.BOT_NAME} (${currentModel()}, effort ${config.FRIDAY_EFFORT}, timezone ${config.TIMEZONE}, images: ${imageProvider ?? "off"})`,
 );
 pruneImages();
+pruneMonitor();
+setInterval(() => pruneMonitor(), 24 * 3600_000).unref();
 const outbox = await startWhatsApp((msg, out) => void handleIncoming(msg, out));
 startReminderLoop(outbox, undefined, (task) => runScheduledTask(task, outbox));
 if (config.PUBLIC_URL) startWeb(outbox);

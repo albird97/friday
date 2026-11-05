@@ -80,6 +80,12 @@ const Env = z.object({
   USAGE_ALERT_DAILY_PERSON: z.coerce.number().min(0).default(5),
   // Only for showing dollar estimates in rupiah (/status).
   USD_TO_IDR: z.coerce.number().positive().default(16_500),
+  // The dashboard at PUBLIC_URL/admin: the username, and the password as a scrypt hash (never the password itself).
+  // `sudo scripts/linux-service.sh admin` sets both. Either one empty = the dashboard is off.
+  ADMIN_USER: z.string().default(""),
+  ADMIN_PASSWORD_HASH: z.string().default(""),
+  // Where the nightly backups go (scripts/backup.sh), so the dashboard can tell when the last one ran.
+  BACKUP_DIR: z.string().default("/opt/friday/backups"),
 });
 
 const env = Env.parse(process.env);

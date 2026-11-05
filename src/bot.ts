@@ -20,6 +20,7 @@ import { connectMessage as spotifyConnectMessage, disconnectSpotify, share, shar
 import { connectHevy, connectMessage as hevyConnectMessage, disconnectHevy, hevyAccount, hevyAllowed, hevyEnabled, HevyError, isBareKey, isKeyShaped, KEY_PAGE } from "./hevy.js";
 import { contextOn, groupContextNote, MAX_KEPT, rememberGroupMessage, setContext } from "./groupcontext.js";
 import { answerGroupInvite, groupWorkoutNote, leaveGroupWorkouts } from "./groupworkout.js";
+import { recordTool } from "./monitor.js";
 import { EVERYWHERE, isPaused, parseDuration, pause, resume } from "./pause.js";
 import type { Reminder } from "./reminders.js";
 import { deleteSession, expireChatSessions, expireSession } from "./session.js";
@@ -572,12 +573,15 @@ async function readableImage(mimetype: string, data: Buffer): Promise<{ mimetype
 async function voiceNote(media: Media): Promise<string> {
   if (!transcriptionEnabled) return "[They sent a voice note, which you can't listen to (transcription isn't set up). Ask them to type it.]";
   if ((media.size ?? 0) > MAX_VOICE_BYTES) return "[They sent a voice note that's too long to transcribe. Ask them to send it in shorter parts or type it.]";
+  const started = Date.now();
   try {
     const text = await transcribe(await media.download());
+    recordTool("voice_note", true, Date.now() - started);
     return text
       ? `[Voice note, transcribed automatically (may contain small mistakes): "${text}"]`
       : "[They sent a voice note with no recognisable speech.]";
   } catch (err) {
+    recordTool("voice_note", false, Date.now() - started);
     return `[They sent a voice note that couldn't be transcribed: ${err instanceof Error ? err.message : err} Ask them to type it.]`;
   }
 }

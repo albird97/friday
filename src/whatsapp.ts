@@ -28,6 +28,7 @@ import type { Incoming, Media } from "./bot.js";
 import type { CatalogItem, Product as CatalogProduct } from "./catalog.js";
 import { config } from "./config.js";
 import { contactByNumber, isAdmin } from "./contacts.js";
+import { noteWhatsApp } from "./monitor.js";
 import { pollByMessage, recordVote, type Poll } from "./polls.js";
 import { loadSession } from "./session.js";
 import type { Outbox } from "./types.js";
@@ -130,7 +131,7 @@ export async function startWhatsApp(onMessage: (msg: Incoming, outbox: Outbox) =
     },
     async groups() {
       const groups = await sock.groupFetchAllParticipating();
-      return Object.values(groups).map((g) => ({ id: g.id, name: g.subject }));
+      return Object.values(groups).map((g) => ({ id: g.id, name: g.subject, size: Math.max(0, g.participants.length - 1) }));
     },
     async groupSize(chatId) {
       const meta = await sock.groupMetadata(chatId).catch(() => undefined);
@@ -298,7 +299,9 @@ export async function startWhatsApp(onMessage: (msg: Incoming, outbox: Outbox) =
     let pairingRequested = false;
 
     current.ev.on("creds.update", saveCreds);
+    noteWhatsApp("connecting");
     current.ev.on("connection.update", async ({ connection, lastDisconnect, qr }) => {
+      if (qr) noteWhatsApp("waitingForScan");
       if (qr && config.pairingNumber && !pairingRequested) {
         pairingRequested = true;
         const code = await current.requestPairingCode(config.pairingNumber);
@@ -307,9 +310,14 @@ export async function startWhatsApp(onMessage: (msg: Incoming, outbox: Outbox) =
         console.log("\n🔗 Scan this QR code with the bot's WhatsApp: Settings → Linked devices → Link a device\n");
         qrcode.generate(qr, { small: true });
       }
-      if (connection === "open") console.log(`✅ Connected to WhatsApp as +${jidDecode(current.user!.id)?.user}`);
+      if (connection === "open") {
+        const number = jidDecode(current.user!.id)?.user;
+        noteWhatsApp("open", number);
+        console.log(`✅ Connected to WhatsApp as +${number}`);
+      }
       if (connection === "close") {
         const status = (lastDisconnect?.error as { output?: { statusCode?: number } } | undefined)?.output?.statusCode;
+        noteWhatsApp(status === DisconnectReason.loggedOut ? "loggedOut" : "closed", String(status ?? "unknown"));
         if (status === DisconnectReason.loggedOut) {
           console.log("WhatsApp logged this device out. Clearing the old login; scan the new QR code to link again.");
           fs.rmSync(config.authDir, { recursive: true, force: true });

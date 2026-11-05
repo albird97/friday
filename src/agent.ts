@@ -10,6 +10,7 @@ import { config } from "./config.js";
 import { chunk, toWhatsApp } from "./format.js";
 import { memoriesFor, SHARED } from "./memory.js";
 import { currentModel } from "./model.js";
+import { recordTool, recordTurn, type Outcome } from "./monitor.js";
 import { buildSystemPrompt, systemBlocks } from "./prompt.js";
 import { isStale, loadSession, recapOf, saveSession, type Session } from "./session.js";
 import { runTool, toolsFor } from "./tools.js";
@@ -124,7 +125,9 @@ async function runTurn(session: Session, conv: Conversation): Promise<boolean> {
             content: "Your output hit the length limit, so this input was cut off. Retry with shorter content.",
           };
         }
+        const started = Date.now();
         const result = await conv.runTool(use.name, use.input);
+        recordTool(use.name, !result.isError, Date.now() - started);
         // Someone's Google, Spotify, Shopee and Hevy data (group workouts included) stays out of the server logs, as the privacy policy says.
         const detail = /^(google|spotify|shopee|hevy|group_workout)_/.test(use.name) ? "" : `: ${result.content.slice(0, 200)}`;
         console.log(`[${conv.label}] tool ${use.name}${result.isError ? " ERROR" : ""}${detail}`);
@@ -157,17 +160,26 @@ export async function converse(conv: Conversation, content: BetaContentBlockPara
   const checkpoint = session.messages.length;
   session.messages.push({ role: "user", content });
 
+  const started = Date.now();
+  let outcome: Outcome = "ok";
+  let failure: unknown;
   try {
     if (!(await runTurn(session, conv))) {
+      outcome = "refused";
       session.messages.length = checkpoint; // forget the refused exchange
       if (session === previous) return; // nothing new to save
     }
     session.updatedAt = Date.now();
     saveSession(conv.key, session);
   } catch (err) {
+    outcome = "failed";
+    failure = err;
     console.error(`[${conv.label}] turn failed`, err);
     // The stored session is untouched, so the next message picks up from before this one.
     await conv.problem(errorReply(err)).catch(() => {});
+  } finally {
+    const { number, name } = conv.usageBy;
+    recordTurn({ at: started, chatId: conv.key, chatName: conv.label, number, name, ms: Date.now() - started, outcome }, failure);
   }
 }
 

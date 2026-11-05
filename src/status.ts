@@ -14,7 +14,8 @@ import { spending, usd } from "./usage.js";
 const startedAt = new Date();
 
 // Read once at startup, so it names the code that is running even after a `git pull` that hasn't restarted it yet.
-const version = (() => {
+// "c6f25cb, 05-11-2026", or "tidak diketahui" without git; the dashboard shows it too.
+export const version = (() => {
   try {
     const args = ["log", "-1", "--format=%h, %cd", "--date=format:%d-%m-%Y"];
     return execFileSync("git", args, { cwd: path.join(import.meta.dirname, ".."), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
