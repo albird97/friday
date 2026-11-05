@@ -1,3 +1,4 @@
+import { contextOn } from "./groupcontext.js";
 import { config } from "./config.js";
 import { allContacts, isAdmin } from "./contacts.js";
 import { imagesEnabled } from "./images.js";
@@ -221,7 +222,10 @@ export function buildSystemPrompt(chat: ChatContext, memories: Memory[], recap: 
       ? `Known contacts (for reminders, files and messages), admin's eyes only: ${allContacts().map((c) => c.name).join(", ") || "(none)"}.`
       : "To remind, send files or pass messages to someone, use the name the person gives you; you don't share who else uses you.";
   const where = chat.isGroup
-    ? `You're in the WhatsApp group "${chat.chatName}". Several people talk here; you only see messages that mention you, \
+    ? contextOn(chat.chatId)
+      ? `You're in the WhatsApp group "${chat.chatName}". Several people talk here. You answer only messages that mention \
+you, reply to you, or start with "${name}"; the others in between come with them as context. Address people by name when it helps.`
+      : `You're in the WhatsApp group "${chat.chatName}". Several people talk here; you only see messages that mention you, \
 reply to you, or start with "${name}". Address people by name when it helps.`
     : `You're in a private chat with ${chat.sender.name}.`;
 

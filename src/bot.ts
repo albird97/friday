@@ -18,6 +18,7 @@ import { connectMessage, disconnect, googleAccount, googleAllowed, googleEnabled
 import { cancelLink, connectMessage as shopeeConnectMessage, disconnectShopee, shopeeAllowed, shopeeEnabled, shopeeShops } from "./shopee.js";
 import { connectMessage as spotifyConnectMessage, disconnectSpotify, share, sharesOf, spotifyAccount, spotifyAllowed, spotifyEnabled, unshare } from "./spotify.js";
 import { connectHevy, connectMessage as hevyConnectMessage, disconnectHevy, hevyAccount, hevyAllowed, hevyEnabled, HevyError, isBareKey, isKeyShaped, KEY_PAGE } from "./hevy.js";
+import { contextOn, groupContextNote, MAX_KEPT, rememberGroupMessage, setContext } from "./groupcontext.js";
 import { answerGroupInvite, groupWorkoutNote, leaveGroupWorkouts } from "./groupworkout.js";
 import { EVERYWHERE, isPaused, parseDuration, pause, resume } from "./pause.js";
 import type { Reminder } from "./reminders.js";
@@ -96,7 +97,10 @@ export function runScheduledTask(task: Reminder, outbox: Outbox): Promise<void> 
 
 async function processMessage(msg: Incoming, outbox: Outbox): Promise<void> {
   const { chat } = msg;
-  if (!msg.addressed) return;
+  if (!msg.addressed) {
+    rememberGroupMessage(chat, msg.text, msg.media?.kind);
+    return;
+  }
 
   // While paused (/diam, /stop) Friday stays quiet; only the admin's commands get through, so they can resume it.
   const admin = isAdmin(chat.sender.number);
@@ -131,7 +135,7 @@ async function processMessage(msg: Incoming, outbox: Outbox): Promise<void> {
 
   const content = await toContent(msg);
   if (!content) return;
-  for (const notes of [errandNotes(chat), announcementNotes(chat), groupWorkoutNote(chat)]) if (notes) content.unshift({ type: "text", text: notes });
+  for (const notes of [errandNotes(chat), announcementNotes(chat), groupWorkoutNote(chat), groupContextNote(chat)]) if (notes) content.unshift({ type: "text", text: notes });
   await respond(chat, content, outbox);
 }
 
@@ -143,6 +147,7 @@ export const ADMIN_HELP = [
   "/remove <nama> — cabut izinnya",
   "/katalog — perbarui katalog WhatsApp Business",
   "/umumkan <teks> — kirim teks ini apa adanya ke semua kontak, tanpa nama pengirim (dari chat pribadi)",
+  "/konteks on | off — di grup: Friday ikut membaca pesan yang tidak menyebutnya, agar paham konteks (diumumkan di grup)",
   "",
   "_Rahasia (tidak terlihat orang lain):_",
   "/status — kesehatan, versi, biaya hari ini & bulan ini",
@@ -347,6 +352,33 @@ async function runCommand(msg: Incoming, outbox: Outbox): Promise<boolean> {
       const until = Date.now() + ms;
       pause(chat.chatId, chat.chatName, until);
       await toAdmin(`🤫 Friday diam di *${chat.chatName}* sampai ${formatDateTime(new Date(until))}.\nUntuk mengaktifkannya lebih cepat, kirim @Friday /bangun di grup itu.`);
+      return true;
+    }
+    case "/konteks": {
+      if (!admin) return false;
+      if (!chat.isGroup) {
+        await toAdmin("Kirim /konteks on atau /konteks off di grupnya, misalnya: @Friday /konteks on");
+        return true;
+      }
+      const choice = args[0]?.toLowerCase();
+      if (choice !== "on" && choice !== "off") {
+        await toAdmin(`👀 Konteks grup di *${chat.chatName}*: *${contextOn(chat.chatId) ? "on" : "off"}*\nFormat: /konteks on atau /konteks off`);
+        return true;
+      }
+      const on = choice === "on";
+      if (on === contextOn(chat.chatId)) {
+        await toAdmin(`Konteks grup di *${chat.chatName}* sudah *${choice}*.`);
+        return true;
+      }
+      setContext(chat.chatId, on);
+      expireSession(chat.chatId); // the group's prompt says which messages Friday sees
+      // Everyone in the group is told, since their messages are what Friday starts or stops reading.
+      await reply(
+        on
+          ? `👀 Mulai sekarang ${config.BOT_NAME} ikut membaca semua pesan di grup ini, tidak hanya yang memanggil ${config.BOT_NAME}, supaya lebih paham obrolannya. ${config.BOT_NAME} tetap hanya membalas kalau dipanggil.\nPesan yang tidak memanggil ${config.BOT_NAME} disimpan paling lama 24 jam (${MAX_KEPT} pesan terakhir), lalu ikut dikirim ke Claude (Anthropic) saat ${config.BOT_NAME} dipanggil berikutnya.`
+          : `🙈 ${config.BOT_NAME} kembali hanya membaca pesan yang memanggilnya di grup ini. Pesan yang belum terpakai sudah dihapus.`,
+      );
+      await toAdmin(`👀 Konteks grup di *${chat.chatName}* sekarang *${choice}*.`);
       return true;
     }
     case "/bangun": {

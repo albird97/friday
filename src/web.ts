@@ -2,6 +2,7 @@ import http from "node:http";
 import { config } from "./config.js";
 import { allContacts } from "./contacts.js";
 import { finishConnect } from "./google.js";
+import { MAX_KEPT } from "./groupcontext.js";
 import { finishConnect as finishShopee } from "./shopee.js";
 import { finishConnect as finishSpotify } from "./spotify.js";
 import type { Outbox } from "./types.js";
@@ -47,7 +48,7 @@ function privacyPage(): string {
   const admin = escapeHtml(allContacts()[0]?.name ?? "pengelola");
   return page(
     `Kebijakan privasi ${bot}`,
-    `<p>Berlaku sejak 1 November 2026. ${bot} adalah layanan pribadi yang dikelola ${admin} untuk keluarga dan teman.</p>
+    `<p>Berlaku sejak 1 November 2026, terakhir diperbarui 5 November 2026. ${bot} adalah layanan pribadi yang dikelola ${admin} untuk keluarga dan teman.</p>
 
 <h2>Data Google yang diakses</h2>
 <p>Hanya kalau kamu menghubungkan akun Google lewat /google dan menyetujui izinnya, ${bot} bisa mengakses data berikut saat kamu memintanya di chat pribadi:</p>
@@ -77,6 +78,9 @@ function privacyPage(): string {
 <h2>Cara data dipakai</h2>
 <p>Data dipakai hanya untuk menjalankan permintaanmu. Perubahan, seperti mengirim email atau mengubah acara, dijalankan saat kamu memintanya, dan kamu langsung diberi tahu apa yang dilakukan. ${bot} tidak bekerja di grup untuk data Google.</p>
 <p>${bot} tidak menjual data, tidak memakainya untuk iklan atau penilaian kredit, dan tidak memakainya untuk melatih model AI umum.</p>
+
+<h2>Pesan di grup</h2>
+<p>Di grup, ${bot} biasanya hanya membaca pesan yang memanggilnya: yang menyebut ${bot}, membalas pesannya, atau diawali "${bot},". ${admin} bisa menyalakan konteks grup per grup dengan /konteks on, dan ${bot} mengumumkannya di grup itu. Selama menyala, pesan lain di grup itu disimpan di server paling lama 24 jam (${MAX_KEPT} pesan terakhir), lalu ikut dikirim ke Anthropic saat ${bot} dipanggil berikutnya dan menjadi bagian riwayat chat grup itu. Foto, file, dan voice note dari pesan tersebut tidak dibuka, hanya dicatat jenisnya. /konteks off menghentikannya dan menghapus pesan yang belum terpakai.</p>
 
 <h2>Pihak lain</h2>
 <p>Dengan persetujuanmu, isi yang dibaca ${bot} dikirim ke Anthropic (Claude) untuk diproses, karena fitur ini tidak bisa berjalan tanpa itu. Balasan dan pesanmu terkirim lewat WhatsApp. Data tidak dibagikan ke pihak lain, kecuali diwajibkan hukum.</p>

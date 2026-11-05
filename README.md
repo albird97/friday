@@ -93,7 +93,8 @@ Friday only works (and only sends reminders) while it's running.
 
 **Groups:** add the bot's number to a group. Friday stays quiet unless someone **@mentions** it, **replies** to one of
 its messages, or starts a message with **"Friday,"** (or "hey Friday"). Anyone in the group can talk to it this way
-(set `GROUP_ACCESS=contacts` to limit it to your contacts).
+(set `GROUP_ACCESS=contacts` to limit it to your contacts). By default it reads only those messages; with `/konteks on`
+in a group it also reads the rest of the conversation there, so it knows what people were talking about.
 
 Things to try:
 
@@ -152,6 +153,7 @@ Not listed in `/help` (admin only; answers always go to the admin's private chat
 | `/status` | Uptime, running version, model, memory and database size, active reminders, today's and this month's estimated cost (also in rupiah, `USD_TO_IDR`), and what is paused |
 | `/diam [30m \| 2j \| 1h]` | In a group: Friday ignores that group for a while (default 1 hour, at most 7 days; `h` = hari, days) |
 | `/bangun` | In a group: end its `/diam` early |
+| `/konteks [on \| off]` | In a group: Friday also reads the messages that don't call it and hands them to Claude with the next one that does, so it follows the conversation. Announced in the group when turned on or off. It keeps the last 50 from the past 24 hours; text only (photos, files and voice notes are noted, not opened). Off deletes what was kept |
 | `/switch [semua] [opus \| sonnet \| haiku \| fable \| default]` | Change the Claude model of the chat it's sent in, private or group (in a group the details go to the admin privately and the group gets a one-line confirmation); `default` goes back to the model every chat uses. Fable is the most capable and costs about 2.5× Opus per token. `/switch semua …` changes that default for every chat without its own choice. Always the family's newest version: Friday looks it up now and daily, and tells the admin when the default moves up. Each changed chat continues from a short recap. `/switch` alone shows the current model. People listed in `SWITCH_USERS` can use it in their own private chat |
 | `/stop` | Emergency stop: Friday ignores every chat (errand replies included) and skips scheduled tasks until `/lanjut`. Reminders and scheduled messages still go out |
 | `/lanjut` | Undo `/stop` |

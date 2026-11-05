@@ -121,6 +121,14 @@ db.exec(`
     text        TEXT NOT NULL,
     created_at  INTEGER NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS group_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id     TEXT NOT NULL,
+    sender      TEXT NOT NULL,
+    text        TEXT NOT NULL,
+    at          INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS group_log_chat ON group_log (chat_id, id);
   CREATE TABLE IF NOT EXISTS pauses (
     chat_id     TEXT PRIMARY KEY,
     chat_name   TEXT NOT NULL,
