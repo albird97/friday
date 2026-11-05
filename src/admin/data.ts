@@ -13,7 +13,7 @@ import { chatModels, currentModel } from "../model.js";
 import { connectionEvents, lastTurnFailure, startedAt, whatsappStatus, type WhatsAppStatus } from "../monitor.js";
 import { onehubEnabled } from "../onehub.js";
 import { activePauses, EVERYWHERE, type Pause } from "../pause.js";
-import type { Kind } from "../reminders.js";
+import { isTerminalChat, type Kind } from "../reminders.js";
 import { shopeeEnabled } from "../shopee.js";
 import { smartlifeEnabled } from "../smartlife.js";
 import { spotifyEnabled } from "../spotify.js";
@@ -44,7 +44,6 @@ const DAY = 24 * HOUR;
 
 export async function snapshot(opts: SnapshotOptions): Promise<Snapshot> {
   const now = opts.now ?? Date.now();
-  const listed = await whatsappGroups(opts.outbox, now);
   const when = calendar(now, opts.range);
   const contacts = allContacts();
   const contactNames = new Map(contacts.map((c) => [c.number, c.name]));
@@ -53,6 +52,9 @@ export async function snapshot(opts: SnapshotOptions): Promise<Snapshot> {
   const spendInRange = spend.filter((r) => r.day >= when.days[0]);
   const chats = chatTurns(when);
   const byNumber = activityBy(chats, (r) => r.number, (r) => r.name);
+  // Guests are answered in groups: a removed contact's old private chats don't make them one.
+  const guestActivity = activityBy(chats.filter((r) => isGroupChat(r.chatId) && !contactNames.has(r.number)), (r) => r.number, (r) => r.name);
+  const privates = privateChats(chats);
   const nameOf = namer(contactNames, byNumber, spend);
 
   const counts = turnsPerDay(when);
@@ -70,9 +72,12 @@ export async function snapshot(opts: SnapshotOptions): Promise<Snapshot> {
   const contexts = contextChats();
   const reminders = activeReminders();
   const links = linkedAccounts();
-  const groups = groupRows({ listed, activity: activityBy(chats, (r) => r.chatId, (r) => r.chatName), pauses, models, styles, contexts, reminders });
+  const traces: GroupTraces = { activity: activityBy(chats, (r) => r.chatId, (r) => r.chatName), pauses, models, styles, contexts, reminders };
+  const known = groupsInHistory(traces);
+  const listed = await whatsappGroups(opts.outbox, now, known.size > 0);
+  const groups = groupRows(listed, known, traces);
   const groupNames = new Map(groups.map((g) => [g.chatId, g.name]));
-  const requests = accessRequests(contactNames);
+  const requests = accessRequests(when, contactNames);
   const security = securityOf(now, opts.currentSession);
 
   const disk = onDisk(now);
@@ -81,7 +86,7 @@ export async function snapshot(opts: SnapshotOptions): Promise<Snapshot> {
   const stopped = pauses.has(EVERYWHERE);
   const lastTurnAt = lastAnswerAt();
   const spendBy = groupBy(spend, (r) => r.number);
-  const people = contacts.map((c) => personRow(c, { when, byNumber, spendBy, links, models, styles }));
+  const people = contacts.map((c) => personRow(c, { when, byNumber, spendBy, links, models, styles, privates }));
   const owing = byPerson(spend.filter((r) => r.day === when.today), nameOf);
 
   return {
@@ -123,14 +128,15 @@ export async function snapshot(opts: SnapshotOptions): Promise<Snapshot> {
       messages: today.messages,
       failed: today.failed,
       refused: counts.get(when.today)?.refused ?? 0,
-      people: [...byNumber.values()].filter((a) => a.today > 0).length,
+      people: contacts.filter((c) => (byNumber.get(c.number)?.today ?? 0) > 0).length,
       contacts: contacts.length,
+      guests: [...guestActivity.values()].filter((a) => a.today > 0).length,
       p50Ms: today.p50Ms,
       p95Ms: today.p95Ms,
       yesterday: { dollars: yesterday.dollars, messages: yesterday.messages },
     },
 
-    month: monthOf(when, spend),
+    month: monthOf(when, now, spend),
     daily,
     costs: costsOf(spendInRange, nameOf),
 
@@ -146,11 +152,11 @@ export async function snapshot(opts: SnapshotOptions): Promise<Snapshot> {
     },
 
     people,
-    guests: guestRows(when, contactNames, byNumber, spendBy, nameOf),
+    guests: guestRows(when, guestActivity, spendBy, nameOf),
     accessRequests: requests,
     groups,
-    schedules: schedulesOf(now, reminders, groupNames, contactNames),
-    integrations: integrationsOf(when, tools, links, contexts),
+    schedules: schedulesOf(now, reminders, groupNames, contactNames, privates.numbers),
+    integrations: integrationsOf(now, when, tools, links, contexts),
 
     settings: {
       model: currentModel(),
@@ -192,8 +198,9 @@ type Calendar = {
   days: string[];
   month: string;
   previousMonth: string;
-  /** Local midnights starting the range, today and tomorrow. */
+  /** Local midnights starting the range, this month, today and tomorrow. */
   rangeStart: number;
+  monthStart: number;
   todayStart: number;
   tomorrowStart: number;
 };
@@ -209,6 +216,7 @@ function calendar(now: number, range: RangeDays): Calendar {
     month,
     previousMonth: addDays(`${month}-01`, -1).slice(0, 7),
     rangeStart: fromLocal(days[0]).getTime(),
+    monthStart: fromLocal(`${month}-01`).getTime(),
     todayStart: fromLocal(today).getTime(),
     tomorrowStart: fromLocal(addDays(today, 1)).getTime(),
   };
@@ -264,17 +272,30 @@ function byPerson(rows: Spend[], nameOf: (number: string) => string): { number: 
     .sort((a, b) => b.dollars - a.dollars || a.name.localeCompare(b.name, "id"));
 }
 
-function monthOf(when: Calendar, spend: Spend[]): Snapshot["month"] {
-  const date = Number(when.today.slice(8));
+/** Today counts for as much of it as has passed: counted whole, the first days of a month read far too low. */
+function monthOf(when: Calendar, now: number, spend: Spend[]): Snapshot["month"] {
   const dollars = dollarsOf(spend.filter((r) => r.day.startsWith(when.month)));
+  // At least half a day, so a first hour's few cents aren't carried to a whole month.
+  const elapsedDays = Math.max(0.5, (now - when.monthStart) / DAY);
   const previous = spend.filter((r) => r.day.startsWith(when.previousMonth));
   return {
     month: when.month,
     dollars,
-    projected: (dollars / date) * daysInMonth(when.month),
-    // Up to the same date; a shorter month just ends sooner.
-    previous: { month: when.previousMonth, dollars: dollarsOf(previous), toDate: dollarsOf(previous.filter((r) => Number(r.day.slice(8)) <= date)) },
+    projected: (dollars / elapsedDays) * daysInMonth(when.month),
+    previous: { month: when.previousMonth, dollars: dollarsOf(previous), toDate: toSameMoment(when, now, previous) },
   };
+}
+
+/**
+ * Last month up to this moment of the month: the days before today's date, and that date's day as far as today has
+ * gone (token use is kept per day). A month too short to have today's date counts in full.
+ */
+function toSameMoment(when: Calendar, now: number, previous: Spend[]): number {
+  const date = Number(when.today.slice(8));
+  if (daysInMonth(when.previousMonth) < date) return dollarsOf(previous);
+  const dateOf = (r: Spend) => Number(r.day.slice(8));
+  const todayShare = (now - when.todayStart) / (when.tomorrowStart - when.todayStart);
+  return dollarsOf(previous.filter((r) => dateOf(r) < date)) + dollarsOf(previous.filter((r) => dateOf(r) === date)) * todayShare;
 }
 
 function costsOf(rows: Spend[], nameOf: (number: string) => string): Snapshot["costs"] {
@@ -465,6 +486,28 @@ function callsOf(tools: ToolUse[], ...names: string[]): { today: number; range: 
 
 const isGroupChat = (chatId: string) => chatId.endsWith("@g.us");
 const privateChat = (number: string) => `${number}@s.whatsapp.net`;
+/** A chat with one person: not a group, an errand's own conversation ("errand:12") or the terminal. */
+const isPrivateChat = (chatId: string) => !isGroupChat(chatId) && !chatId.startsWith("errand:") && !isTerminalChat(chatId);
+
+/** chats: each number's private chats, most recently active first; numbers: whom each of those chats is with. */
+type PrivateChats = { chats: Map<string, string[]>; numbers: Map<string, string> };
+
+/**
+ * Baileys 7 often names a 1:1 chat "<lid>@lid" instead of "<number>@s.whatsapp.net", and /switch, /style and schedules
+ * made in it are kept under that name. Only turns tie such a chat to a number.
+ */
+function privateChats(rows: ChatTurns[]): PrivateChats {
+  const chats = new Map<string, string[]>();
+  const numbers = new Map<string, string>();
+  for (const { chatId, number } of rows.filter((r) => isPrivateChat(r.chatId)).sort((a, b) => b.lastAt - a.lastAt)) {
+    if (!numbers.has(chatId)) numbers.set(chatId, number);
+    chats.set(number, [...(chats.get(number) ?? []), chatId]);
+  }
+  return { chats, numbers };
+}
+
+/** A number's private chats, most recently active first, and its phone JID (last, if it has had no turns). */
+const chatsOf = (privates: PrivateChats, number: string) => [...new Set([...(privates.chats.get(number) ?? []), privateChat(number)])];
 
 type Links = { google: Set<string>; youtube: Set<string>; hevy: Set<string>; spotify: Set<string>; shops: Map<string, number> };
 
@@ -493,7 +536,15 @@ function contextChats(): Set<string> {
   return new Set((sql("SELECT substr(key, 9) AS chatId FROM settings WHERE key LIKE 'context:%'").all() as { chatId: string }[]).map((r) => r.chatId));
 }
 
-type PersonFacts = { when: Calendar; byNumber: Map<string, Activity>; spendBy: Map<string, Spend[]>; links: Links; models: Map<string, string>; styles: Styles };
+type PersonFacts = {
+  when: Calendar;
+  byNumber: Map<string, Activity>;
+  spendBy: Map<string, Spend[]>;
+  links: Links;
+  models: Map<string, string>;
+  styles: Styles;
+  privates: PrivateChats;
+};
 
 function personRow(contact: Contact, f: PersonFacts): PersonRow {
   const { number } = contact;
@@ -501,6 +552,10 @@ function personRow(contact: Contact, f: PersonFacts): PersonRow {
   const fromEnv = config.contacts.some((c) => c.number === number);
   const activity = f.byNumber.get(number);
   const own = f.spendBy.get(number) ?? [];
+  // Model and style: of their private chats that have one, the most recently active chat's.
+  const chats = chatsOf(f.privates, number);
+  const ownModel = chats.map((chatId) => f.models.get(chatId)).find((model) => model !== undefined);
+  const style = chats.map((chatId) => f.styles.get(chatId)?.style).find((s) => s !== undefined);
   return {
     number,
     name: contact.name,
@@ -521,8 +576,8 @@ function personRow(contact: Contact, f: PersonFacts): PersonRow {
       spotify: f.links.spotify.has(number),
       shopeeShops: f.links.shops.get(number) ?? 0,
     },
-    ownModel: f.models.get(privateChat(number)) ?? null,
-    style: f.styles.get(privateChat(number))?.style ?? null,
+    ownModel: ownModel ?? null,
+    style: style ?? null,
     can: {
       errands: config.errandUsers.includes(number),
       onehub: config.onehubUsers.includes(number),
@@ -536,27 +591,31 @@ function addedAt(number: string): number | null {
   return (sql("SELECT added_at AS addedAt FROM contacts WHERE number = ?").get(number) as { addedAt: number } | undefined)?.addedAt ?? null;
 }
 
-/** People who aren't contacts but used Friday (in a group) during the range. */
-function guestRows(
-  when: Calendar,
-  contactNames: Map<string, string>,
-  byNumber: Map<string, Activity>,
-  spendBy: Map<string, Spend[]>,
-  nameOf: (number: string) => string,
-): GuestRow[] {
-  const guests: GuestRow[] = [];
-  for (const number of new Set([...byNumber.keys(), ...spendBy.keys()])) {
-    const activity = byNumber.get(number);
-    const spent = (spendBy.get(number) ?? []).filter((r) => r.day >= when.days[0]);
-    if (contactNames.has(number) || (!activity?.messages && !spent.length)) continue;
-    guests.push({ number, name: nameOf(number), messagesRange: activity?.messages ?? 0, dollarsRange: dollarsOf(spent), lastActiveAt: activity?.lastAt ?? null });
-  }
+/**
+ * People who aren't contacts but were answered in a group during the range, from their turns in groups. Their dollars
+ * are all of theirs in the range: token use isn't kept per chat.
+ */
+function guestRows(when: Calendar, guestActivity: Map<string, Activity>, spendBy: Map<string, Spend[]>, nameOf: (number: string) => string): GuestRow[] {
+  const guests = [...guestActivity]
+    .filter(([, activity]) => activity.messages > 0)
+    .map(([number, activity]) => ({
+      number,
+      name: nameOf(number),
+      messagesRange: activity.messages,
+      dollarsRange: dollarsOf((spendBy.get(number) ?? []).filter((r) => r.day >= when.days[0])),
+      lastActiveAt: activity.lastAt,
+    }));
   return guests.sort((a, b) => b.messagesRange - a.messagesRange || b.dollarsRange - a.dollarsRange || a.name.localeCompare(b.name, "id"));
 }
 
-/** Website access requests from people who aren't contacts yet, newest first. */
-function accessRequests(contactNames: Map<string, string>): Snapshot["accessRequests"] {
-  const rows = sql("SELECT number, name, day FROM access_requests ORDER BY day DESC, rowid DESC").all() as Snapshot["accessRequests"];
+// A request the admin has let be for a month shouldn't stay on the list, and raise attention, forever.
+const ACCESS_REQUEST_DAYS = 30;
+
+/** Website access requests of the last 30 days (today included) from people who aren't contacts yet, newest first. */
+function accessRequests(when: Calendar, contactNames: Map<string, string>): Snapshot["accessRequests"] {
+  const rows = sql("SELECT number, name, day FROM access_requests WHERE day >= ? ORDER BY day DESC, rowid DESC").all(
+    addDays(when.today, 1 - ACCESS_REQUEST_DAYS),
+  ) as Snapshot["accessRequests"];
   return rows.filter((r) => !contactNames.has(r.number));
 }
 
@@ -573,14 +632,15 @@ const groupCaches = new WeakMap<Outbox, GroupCache>();
 /**
  * The groups Friday is in, as WhatsApp lists them, refreshed every 10 minutes. A snapshot waits at most 3 seconds for a
  * refresh; a slow or failed one leaves the last list (or none yet), and a slow one finishes in the background.
+ * inSome: history says Friday is in groups.
  */
-async function whatsappGroups(outbox: Outbox | undefined, now: number): Promise<Listed | undefined> {
+async function whatsappGroups(outbox: Outbox | undefined, now: number, inSome: boolean): Promise<Listed | undefined> {
   const list = outbox?.groups;
   if (!outbox || !list) return undefined;
   const cache = groupCaches.get(outbox) ?? { expiresAt: 0, failing: false };
   groupCaches.set(outbox, cache);
   if (now >= cache.expiresAt && !cache.refreshing) {
-    cache.refreshing = refreshGroups(() => list.call(outbox), cache, now).finally(() => {
+    cache.refreshing = refreshGroups(() => list.call(outbox), cache, now, inSome).finally(() => {
       cache.refreshing = undefined;
     });
     await waitAtMost(cache.refreshing, GROUPS_WAIT_MS);
@@ -588,9 +648,12 @@ async function whatsappGroups(outbox: Outbox | undefined, now: number): Promise<
   return cache.groups;
 }
 
-async function refreshGroups(list: NonNullable<Outbox["groups"]>, cache: GroupCache, now: number): Promise<void> {
+async function refreshGroups(list: NonNullable<Outbox["groups"]>, cache: GroupCache, now: number, inSome: boolean): Promise<void> {
   try {
-    cache.groups = new Map((await list()).map((g) => [g.id, { name: g.name, size: g.size }]));
+    const groups = await list();
+    // Baileys resolves [] when WhatsApp doesn't answer in time: with groups known, that's no answer, not "left them all".
+    if (!groups.length && (cache.groups?.size || inSome)) throw new Error("WhatsApp listed no groups");
+    cache.groups = new Map(groups.map((g) => [g.id, { name: g.name, size: g.size }]));
     cache.expiresAt = now + GROUPS_FRESH_MS;
     cache.failing = false;
   } catch (err) {
@@ -610,8 +673,8 @@ async function waitAtMost(work: Promise<unknown>, ms: number): Promise<void> {
   clearTimeout(timer);
 }
 
-type GroupFacts = {
-  listed: Listed | undefined;
+/** What Friday keeps per chat that a group's row is made of. */
+type GroupTraces = {
   activity: Map<string, Activity>;
   pauses: Map<string, Pause>;
   models: Map<string, string>;
@@ -620,13 +683,18 @@ type GroupFacts = {
   reminders: ReminderRow[];
 };
 
+/** Groups with a trace in the database: turns, a stored conversation, a pause, a style, a schedule, /context or a model. */
+function groupsInHistory(f: GroupTraces): Set<string> {
+  const sources = [f.activity.keys(), groupSessions(), f.pauses.keys(), f.styles.keys(), f.reminders.map((r) => r.chatId), f.contexts, f.models.keys()];
+  return new Set(sources.flatMap((source) => [...source]).filter(isGroupChat));
+}
+
 /** Every group Friday is in or has a trace of, busiest first. */
-function groupRows(f: GroupFacts): GroupRow[] {
+function groupRows(listedGroups: Listed | undefined, known: Set<string>, f: GroupTraces): GroupRow[] {
   const remindersTo = groupBy(f.reminders, (r) => r.chatId);
-  const sources = [f.listed?.keys() ?? [], f.activity.keys(), groupSessions(), f.pauses.keys(), f.styles.keys(), remindersTo.keys(), f.contexts, f.models.keys()];
-  const ids = new Set(sources.flatMap((source) => [...source]).filter(isGroupChat));
+  const ids = new Set([...(listedGroups?.keys() ?? []), ...known].filter(isGroupChat));
   const rows = [...ids].map((chatId): GroupRow => {
-    const listed = f.listed?.get(chatId);
+    const listed = listedGroups?.get(chatId);
     const activity = f.activity.get(chatId);
     const pause = f.pauses.get(chatId);
     const style = f.styles.get(chatId);
@@ -636,7 +704,7 @@ function groupRows(f: GroupFacts): GroupRow[] {
       name: listed?.name || activity?.name || pause?.chatName || style?.chatName || schedules.find((r) => r.chatName)?.chatName || "Grup tanpa nama",
       members: listed?.size ?? null,
       // Before WhatsApp has ever answered, assume Friday is still in all of them.
-      inGroup: f.listed ? listed !== undefined : true,
+      inGroup: listedGroups ? listed !== undefined : true,
       messagesToday: activity?.today ?? 0,
       messagesRange: activity?.messages ?? 0,
       lastActiveAt: activity?.lastAt ?? null,
@@ -673,13 +741,21 @@ function activeReminders(): ReminderRow[] {
   ).all({ admin: config.contacts[0]?.number ?? null }) as ReminderRow[];
 }
 
-function schedulesOf(now: number, reminders: ReminderRow[], groupNames: Map<string, string>, contactNames: Map<string, string>): Snapshot["schedules"] {
+function schedulesOf(
+  now: number,
+  reminders: ReminderRow[],
+  groupNames: Map<string, string>,
+  contactNames: Map<string, string>,
+  chatNumbers: Map<string, string>,
+): Snapshot["schedules"] {
   const count = (kind: Kind) => reminders.filter((r) => r.kind === kind).length;
   const where = (r: ReminderRow) => {
     if (r.chatName) return r.chatName;
     if (isGroupChat(r.chatId)) return groupNames.get(r.chatId) ?? r.chatId;
-    const number = /^(\d+)@s\.whatsapp\.net$/.exec(r.chatId)?.[1];
-    return (number && contactNames.get(number)) || r.chatId;
+    // A chat named by LID says nothing about whose it is; only its turns do.
+    const phone = /^(\d+)@s\.whatsapp\.net$/.exec(r.chatId)?.[1];
+    const number = chatNumbers.get(r.chatId) ?? phone;
+    return (number && contactNames.get(number)) || (phone ? `+${phone}` : "chat pribadi");
   };
   return {
     counts: { reminder: count("reminder"), message: count("message"), task: count("task") },
@@ -701,18 +777,27 @@ function schedulesOf(now: number, reminders: ReminderRow[], groupNames: Map<stri
 
 // --- Features --------------------------------------------------------------------------------------------------------
 
-function integrationsOf(when: Calendar, tools: ToolUse[], links: Links, contexts: Set<string>): Snapshot["integrations"] {
+// As errands.ts has it: an active errand takes no more replies after 3 days of silence (ACTIVE_DAYS), and
+// ERRAND_DAILY_LIMIT counts the errands started in the last 24 hours.
+const ERRAND_SILENT_MS = 3 * DAY;
+
+function integrationsOf(now: number, when: Calendar, tools: ToolUse[], links: Links, contexts: Set<string>): Snapshot["integrations"] {
   const polls = sql("SELECT COUNT(*) AS n FROM polls WHERE created_at >= ?").get(when.rangeStart) as { n: number };
   const workouts = sql(
     "SELECT COUNT(*) FILTER (WHERE status IN ('inviting', 'active')) AS active, COUNT(*) FILTER (WHERE created_at >= ?) AS started FROM group_workouts",
   ).get(when.rangeStart) as { active: number; started: number };
   const errands = sql(
-    "SELECT COUNT(*) FILTER (WHERE status IN ('pending', 'active')) AS active, COUNT(*) FILTER (WHERE created_at >= ?) AS today FROM errands",
-  ).get(when.todayStart) as { active: number; today: number };
-  // Who asked, whom Friday wrote to, and how far it got: never the brief or the messages.
+    `SELECT COUNT(*) FILTER (WHERE status IN ('pending', 'active') AND updated_at > @silent) AS active,
+            COUNT(*) FILTER (WHERE created_at > @dayAgo) AS last24h
+       FROM errands`,
+  ).get({ silent: now - ERRAND_SILENT_MS, dayAgo: now - DAY }) as { active: number; last24h: number };
+  // Who asked, whom Friday wrote to, and how far it got: never the brief or the messages. Nothing writes "expired"
+  // down: an active errand silent that long simply stops taking replies.
   const recent = sql(
-    "SELECT id, requester_name AS requester, target_name AS target, status, turns, updated_at AS updatedAt FROM errands ORDER BY updated_at DESC, id DESC LIMIT 10",
-  ).all() as ErrandRow[];
+    `SELECT id, requester_name AS requester, target_name AS target,
+            CASE WHEN status = 'active' AND updated_at <= @silent THEN 'expired' ELSE status END AS status, turns, updated_at AS updatedAt
+       FROM errands ORDER BY updated_at DESC, id DESC LIMIT 10`,
+  ).all({ silent: now - ERRAND_SILENT_MS }) as ErrandRow[];
   const admin = config.contacts[0]?.number;
   return {
     images: { provider: imageProvider ?? null, ...callsOf(tools, "generate_image", "edit_image") },
@@ -728,7 +813,7 @@ function integrationsOf(when: Calendar, tools: ToolUse[], links: Links, contexts
     polls: { range: polls.n },
     groupWorkouts: { active: workouts.active, range: workouts.started },
     groupContext: { groups: contexts.size },
-    errands: { users: config.errandUsers.length, active: errands.active, today: errands.today, dailyLimit: config.ERRAND_DAILY_LIMIT, recent },
+    errands: { users: config.errandUsers.length, active: errands.active, last24h: errands.last24h, dailyLimit: config.ERRAND_DAILY_LIMIT, recent },
   };
 }
 

@@ -144,9 +144,10 @@ export type Snapshot = {
     messages: number;
     failed: number;
     refused: number;
-    /** Distinct people who got an answer today, and how many contacts there are. */
+    /** Contacts who got an answer today, out of how many contacts there are; guests = non-contacts answered in groups. */
     people: number;
     contacts: number;
+    guests: number;
     p50Ms: number | null;
     p95Ms: number | null;
     yesterday: { dollars: number; messages: number };
@@ -209,7 +210,8 @@ export type Snapshot = {
     polls: { range: number };
     groupWorkouts: { active: number; range: number };
     groupContext: { groups: number };
-    errands: { users: number; active: number; today: number; dailyLimit: number; recent: ErrandRow[] };
+    /** active: still taking replies (updated in the last 3 days); last24h: new errands in the 24 hours ERRAND_DAILY_LIMIT counts. */
+    errands: { users: number; active: number; last24h: number; dailyLimit: number; recent: ErrandRow[] };
   };
 
   settings: {

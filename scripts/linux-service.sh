@@ -297,9 +297,10 @@ EOF
     read -r -p "Dashboard username${CURRENT:+ [$CURRENT]}: " ADMIN_NAME
     ADMIN_NAME="${ADMIN_NAME:-$CURRENT}"
     [[ "$ADMIN_NAME" =~ ^[A-Za-z0-9._@-]{2,40}$ ]] || { echo "Use 2 to 40 letters, digits, dots, dashes, underscores or @. Nothing changed." >&2; exit 1; }
-    read -r -s -p "New password (hidden, at least 10 characters): " PASSWORD
+    # IFS= keeps spaces at either end: the browser sends the password exactly as typed.
+    IFS= read -r -s -p "New password (hidden, at least 10 characters): " PASSWORD
     echo
-    read -r -s -p "The same password again: " AGAIN
+    IFS= read -r -s -p "The same password again: " AGAIN
     echo
     [ "$PASSWORD" = "$AGAIN" ] || { echo "The passwords don't match. Nothing changed." >&2; exit 1; }
     [ "${#PASSWORD}" -ge 10 ] || { echo "Use at least 10 characters. Nothing changed." >&2; exit 1; }

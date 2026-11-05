@@ -184,8 +184,9 @@ group quieted with `/diam`; and sign other browsers out.
 
 It never shows what anyone wrote: no messages, memories, errand briefs, or Google, Spotify, Shopee or Hevy data, and
 other people's private schedules appear without their text. To fill the charts Friday keeps a `turns` row per answered
-message (when, which chat, whose, how long, whether it worked; 180 days) and tool calls per day (`tool_usage`, 400
-days); recent errors and the connection log live in memory only.
+message (when, which chat, whose, how long, whether it worked) and tool calls per day (`tool_usage`, 400 days); recent
+errors and the connection log live in memory only. Per-person records (`turns`, the token counts behind the cost
+estimates, the daily message counts and spending alerts) are deleted after 180 days, as the privacy page says.
 
 Set the username and password on the server, which also turns the dashboard on (it needs `PUBLIC_URL`):
 
@@ -198,9 +199,11 @@ It asks for a username and the password twice (hidden, at least 10 characters) a
 `/admin` to Friday from the site `linux-service.sh web <domain>` writes, so rerun that once after updating to this
 version.
 
-Sign-ins last 7 days of inactivity, 30 at most, in an HttpOnly, SameSite=Strict cookie. Five wrong tries from one IP
-block it for 15 minutes, and 30 from anywhere pause every sign-in for 15 minutes; the admin gets a WhatsApp message on
-each sign-in and each block. Forms carry a per-session token and must come from the dashboard's own address.
+Sign-ins last 7 days of inactivity, 30 at most, in an HttpOnly, SameSite=Strict cookie, over HTTPS only (HSTS). Five
+wrong tries from one address (an IPv6 /64 counts as one) block it for 15 minutes, and 30 from anywhere pause sign-ins
+from new addresses for 15 minutes; addresses that signed in before still get in. The admin gets a WhatsApp message on
+each sign-in, and on blocks the first at once and the rest summed up once an hour. Forms carry a per-session token and
+must come from the dashboard's own address.
 
 ## Errands with people outside the contacts
 

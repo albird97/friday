@@ -69,6 +69,9 @@ const SECURITY_HEADERS = {
   "X-Robots-Tag": "noindex, nofollow",
   "Cross-Origin-Opener-Policy": "same-origin",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+  // Once seen over HTTPS, the browser never asks for this site over plain http again, so the sign-in can't be
+  // intercepted on a hostile Wi-Fi by stripping HTTPS. Browsers ignore it over http (local runs).
+  "Strict-Transport-Security": "max-age=31536000",
 };
 
 const NO_STORE = { "Cache-Control": "no-store" };
@@ -216,7 +219,53 @@ function blockedText(block: Block): string {
   const tries = `${block.tries} kali gagal masuk ke dashboard dalam ${minutes(block.withinMs)} menit`;
   return block.scope === "ip"
     ? `🚫 ${tries} dari IP ${block.ip}, jadi IP itu diblokir ${minutes(block.forMs)} menit.`
-    : `🚫 ${tries} dari berbagai IP (terakhir ${block.ip}), jadi semua percobaan masuk dihentikan ${minutes(block.forMs)} menit, termasuk dari kamu.`;
+    : `🚫 ${tries} dari berbagai IP (terakhir ${block.ip}), jadi percobaan masuk dari IP baru dihentikan ${minutes(block.forMs)} menit. IP yang pernah berhasil masuk tetap bisa.`;
+}
+
+const ALERT_EVERY_MS = 60 * 60_000;
+
+/**
+ * Block notices: the first at once, then at most one an hour that sums up the rest, so a long guessing attack can't
+ * flood the admin's WhatsApp (and train them to mute the sign-in notices that matter). The process keeps one (below);
+ * tests make their own and call flush() instead of waiting an hour.
+ */
+export function blockNotices(send: (text: string) => void, every = ALERT_EVERY_MS) {
+  let last = -Infinity;
+  let held: Block[] = [];
+  let timer: NodeJS.Timeout | undefined;
+
+  function flush(now = Date.now()): void {
+    clearTimeout(timer);
+    timer = undefined;
+    if (held.length === 0) return;
+    const blocks = held;
+    held = [];
+    last = now;
+    const addresses = new Set(blocks.map((b) => b.ip)).size;
+    const everyone = blocks.some((b) => b.scope === "everyone") ? " Sempat juga semua IP baru dihentikan sementara." : "";
+    send(
+      `🚫 Dalam 1 jam terakhir ada ${blocks.length} blokir lagi karena salah password dashboard, dari ${addresses} IP (terakhir ${blocks.at(-1)!.ip}).${everyone} Semuanya otomatis; ganti password kalau curiga.`,
+    );
+  }
+
+  function note(block: Block, now = Date.now()): void {
+    if (now - last >= every) {
+      last = now;
+      send(blockedText(block));
+      return;
+    }
+    held.push(block);
+    timer ??= setTimeout(() => flush(), last + every - now);
+    timer.unref();
+  }
+
+  return { note, flush };
+}
+
+const notices = new WeakMap<Outbox, ReturnType<typeof blockNotices>>();
+function alertBlock(outbox: Outbox, block: Block): void {
+  if (!notices.has(outbox)) notices.set(outbox, blockNotices((text) => tellAdmin(outbox, text)));
+  notices.get(outbox)!.note(block);
 }
 
 // ── Pages and actions ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -258,7 +307,7 @@ async function signInForm({ req, outbox, ip, agent }: Visit): Promise<Reply> {
     return login(429, { problem: "blocked", retryAfterMs: attempt.retryAfterMs, username }, { "Retry-After": retryAfter });
   }
   if (attempt.result === "wrong") {
-    if (attempt.block) tellAdmin(outbox, blockedText(attempt.block));
+    if (attempt.block) alertBlock(outbox, attempt.block);
     return login(401, { problem: "wrong", username });
   }
   tellAdmin(outbox, signedInText(ip, agent));

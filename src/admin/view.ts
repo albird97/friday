@@ -440,7 +440,7 @@ function latencyLines(days: DayStat[], f: Fmt): Html {
     { cls: "s2", name: "95%", end: lastWith((d) => d.p95Ms) },
   ];
   return html`<div class="chart chart-line" data-chart tabindex="0" role="img" aria-label="Waktu balas per hari: median dan 95 persen jawaban, dalam detik.">
-  <div class="legend" aria-hidden="true"><span class="legend-item"><span class="key key-line s1"></span>Median</span><span class="legend-item"><span class="key key-line s2"></span>95% jawaban lebih cepat</span></div>
+  <div class="legend" aria-hidden="true"><span class="legend-item"><span class="key key-line s1"></span>Median</span><span class="legend-item"><span class="key key-line s2"></span>95% jawaban di bawah garis ini</span></div>
   <div class="chart-body">
     ${yAxis(ticks, top, (t) => `${t.toLocaleString("id-ID")} dtk`)}
     <div class="chart-plot">
@@ -553,7 +553,7 @@ function topbar(s: Snapshot, ctx: ViewContext, f: Fmt): Html {
       ${themeButton()}
       <form method="post" action="/admin/logout" class="inline-form">
         <input type="hidden" name="csrf" value="${ctx.csrf}">
-        <button class="btn btn-quiet btn-small" type="submit">${icon("logout")}<span class="hide-sm">Keluar</span></button>
+        <button class="btn btn-quiet btn-small" type="submit" aria-label="Keluar" title="Keluar">${icon("logout")}<span class="hide-sm">Keluar</span></button>
       </form>
     </div>
   </div>
@@ -606,17 +606,20 @@ function actionForm(ctx: ViewContext, action: string, button: Html, opts: { chat
 
 // ── Ringkasan ────────────────────────────────────────────────────────────────────────────────────────────────────
 
-const LINK_FOR: Partial<Record<Attention["code"], [Section, string]>> = {
-  claudeFailing: ["sistem", "Lihat log"],
+/** Panels the attention links land on (ids given to panel()), so a link opens the very thing it names. */
+const PANEL = { requests: "permintaan-akses", tools: "alat", log: "log-masalah", details: "rincian-sistem", logins: "riwayat-login" } as const;
+
+const LINK_FOR: Partial<Record<Attention["code"], [anchor: string, label: string]>> = {
+  claudeFailing: [PANEL.log, "Lihat log"],
   costToday: ["biaya", "Lihat biaya"],
   costPerson: ["biaya", "Lihat biaya"],
   memoryHigh: ["sistem", "Lihat sistem"],
   diskLow: ["sistem", "Lihat sistem"],
-  backupStale: ["sistem", "Lihat backup"],
+  backupStale: [PANEL.details, "Lihat backup"],
   remindersStuck: ["jadwal", "Lihat jadwal"],
-  toolErrors: ["aktivitas", "Lihat alat"],
-  loginFailures: ["keamanan", "Lihat login"],
-  accessRequests: ["orang", "Lihat permintaan"],
+  toolErrors: [PANEL.tools, "Lihat alat"],
+  loginFailures: [PANEL.logins, "Lihat login"],
+  accessRequests: [PANEL.requests, "Lihat permintaan"],
 };
 
 function attentionWords(a: Attention, s: Snapshot, f: Fmt): { title: string; text: string } {
@@ -662,7 +665,9 @@ function healthPanel(s: Snapshot, ctx: ViewContext, f: Fmt): Html {
   const worst = issues[0]?.severity;
   const tone: Tone = worst ?? "good";
   const title = issues.length === 0 ? (infos.length ? "Semua normal" : "Semua berjalan normal") : issues.length === 1 ? "1 hal perlu dicek" : `${issues.length} hal perlu dicek`;
-  const sub = `${s.botName} menyala ${f.span(s.system.uptimeMs)}${s.system.version ? ` · versi ${s.system.version.hash}` : ""} · ${s.status.whatsapp.state === "open" ? "WhatsApp terhubung" : "WhatsApp belum terhubung"}`;
+  // While stopped, "menyala" would contradict the card: say what's off, and that the server itself still runs.
+  const running = s.status.stopped ? `Dihentikan, server tetap jalan ${f.span(s.system.uptimeMs)}` : `${s.botName} menyala ${f.span(s.system.uptimeMs)}`;
+  const sub = `${running}${s.system.version ? ` · versi ${s.system.version.hash}` : ""} · ${s.status.whatsapp.state === "open" ? "WhatsApp terhubung" : "WhatsApp belum terhubung"}`;
   const control = s.status.stopped
     ? actionForm(ctx, "resume", html`<button class="btn btn-primary" type="submit">${icon("play")}<span>Nyalakan lagi</span></button>`)
     : actionForm(ctx, "stop", html`<button class="btn btn-danger-quiet" type="submit">${icon("pause")}<span>Hentikan ${s.botName}</span></button>`, {
@@ -711,18 +716,7 @@ function vitals(s: Snapshot, f: Fmt): Html {
   const [waTone, waLabel] = waWords[wa.state] ?? ["neutral", wa.state];
   const failing = s.attention.find((a) => a.code === "claudeFailing");
   const claudeTone: Tone = failing ? (failing.severity === "critical" ? "critical" : "serious") : s.status.lastTurnAt ? "good" : "neutral";
-  const mem = s.system.memory;
-  const memShare = mem.limit ? mem.rss / mem.limit : null;
-  const disk = s.system.storage.disk;
-  const diskUsed = disk ? 1 - disk.free / disk.total : null;
-  // Load per CPU: 1 means every CPU is busy; replies slow down well before 3.
-  const loadShare = s.system.host.load[0] / Math.max(1, s.system.host.cpus);
-  const serverTone: Tone =
-    (memShare ?? 0) >= 0.9 || (diskUsed ?? 0) >= 0.95 || loadShare >= LOAD_BAD
-      ? "serious"
-      : (memShare ?? 0) >= 0.8 || (diskUsed ?? 0) >= 0.9 || loadShare >= LOAD_WARN
-        ? "warning"
-        : "good";
+  const server = serverCheck(s, f);
   const counts = s.schedules.counts;
   const active = counts.reminder + counts.message + counts.task;
   const item = (label: string, value: Html, sub: Part, iconName: string) =>
@@ -731,7 +725,7 @@ function vitals(s: Snapshot, f: Fmt): Html {
   ${item("WhatsApp", dot(waTone, waLabel, wa.state === "open"), [`sejak ${f.when(wa.since)}`, wa.number ? ` · +${wa.number}` : "", wa.reconnects ? ` · ${wa.reconnects}× sambung ulang` : ""], "chat")}
   ${item(
     "Claude",
-    dot(claudeTone, failing ? "Ada yang gagal" : s.status.lastTurnAt ? `Jawab ${f.ago(s.status.lastTurnAt)}` : "Belum menjawab"),
+    dot(claudeTone, failing ? "Ada yang gagal" : s.status.lastTurnAt ? `Terakhir menjawab ${f.ago(s.status.lastTurnAt)}` : "Belum menjawab"),
     `${modelName(s.settings.model)} · effort ${s.settings.effort}${s.settings.chatModels ? ` · ${s.settings.chatModels} chat pakai model lain` : ""}`,
     "spark",
   )}
@@ -741,13 +735,33 @@ function vitals(s: Snapshot, f: Fmt): Html {
     `${active} aktif${s.schedules.overdue ? ` · ${s.schedules.overdue} terlambat` : ""}`,
     "calendar",
   )}
-  ${item(
-    "Server",
-    dot(serverTone, memShare !== null ? `Memori ${f.pct(memShare)}` : `Memori ${f.bytes(mem.rss)}`),
-    [diskUsed !== null ? `disk ${f.pct(diskUsed)} terpakai · ` : "", `beban ${s.system.host.load[0].toLocaleString("id-ID", { maximumFractionDigits: 2 })} / ${s.system.host.cpus} CPU`],
-    "server",
-  )}
+  ${item("Server", dot(server.tone, server.label), server.others, "server")}
 </div>`;
+}
+
+const TONE_RANK: Record<Tone, number> = { neutral: 0, accent: 0, info: 0, good: 0, warning: 1, serious: 2, critical: 3 };
+const level = (share: number, warnAt: number, badAt: number): Tone => (share >= badAt ? "serious" : share >= warnAt ? "warning" : "good");
+
+/** The server tile names whichever measure set its colour (Friday's memory, disk, the server's RAM, CPU load). */
+function serverCheck(s: Snapshot, f: Fmt): { tone: Tone; label: string; others: string } {
+  const { memory: mem, host, storage } = s.system;
+  const memShare = mem.limit ? mem.rss / mem.limit : null;
+  const diskUsed = storage.disk ? 1 - storage.disk.free / Math.max(1, storage.disk.total) : null;
+  const ramUsed = host.memTotal > 0 ? 1 - host.memFree / host.memTotal : null;
+  // Load per CPU: 1 means every CPU is busy; replies slow down well before 3.
+  const loadShare = host.load[0] / Math.max(1, host.cpus);
+  const checks = [
+    { tone: memShare === null ? "good" : level(memShare, 0.8, 0.9), label: memShare === null ? `Memori ${f.bytes(mem.rss)}` : `Memori ${f.pct(memShare)}`, short: memShare === null ? `memori ${f.bytes(mem.rss)}` : `memori ${f.pct(memShare)}` },
+    ...(diskUsed === null ? [] : [{ tone: level(diskUsed, 0.9, 0.95), label: `Disk ${f.pct(diskUsed)} terpakai`, short: `disk ${f.pct(diskUsed)}` }]),
+    ...(ramUsed === null ? [] : [{ tone: level(ramUsed, 0.85, 0.95), label: `RAM server ${f.pct(ramUsed)}`, short: `RAM server ${f.pct(ramUsed)}` }]),
+    {
+      tone: level(loadShare, LOAD_WARN, LOAD_BAD),
+      label: `Beban CPU ${loadShare.toLocaleString("id-ID", { maximumFractionDigits: 1 })} per CPU`,
+      short: `beban ${host.load[0].toLocaleString("id-ID", { maximumFractionDigits: 2 })} / ${host.cpus} CPU`,
+    },
+  ] as { tone: Tone; label: string; short: string }[];
+  const worst = checks.reduce((a, b) => (TONE_RANK[b.tone] > TONE_RANK[a.tone] ? b : a), checks[0]);
+  return { tone: worst.tone, label: worst.label, others: checks.filter((c) => c !== worst).map((c) => c.short).join(" · ") };
 }
 
 function kpis(s: Snapshot, f: Fmt): Html {
@@ -792,9 +806,9 @@ function kpis(s: Snapshot, f: Fmt): Html {
     <p class="kpi-sub">median${t.p95Ms !== null ? html` · 95% di bawah <strong>${f.seconds(t.p95Ms)}</strong>` : ""}</p>
   </div>
   <div class="kpi">
-    <p class="kpi-label">Orang dibantu hari ini</p>
+    <p class="kpi-label">Kontak dibantu hari ini</p>
     <p class="kpi-value">${f.int(t.people)}</p>
-    <p class="kpi-sub">dari ${f.int(t.contacts)} kontak${s.guests.length ? ` · ${s.guests.length} tamu di grup (${s.range} hari)` : ""}</p>
+    <p class="kpi-sub">dari ${f.int(t.contacts)} kontak${t.guests ? ` · ${f.int(t.guests)} tamu di grup` : ""}</p>
   </div>
 </div>`;
 }
@@ -918,6 +932,7 @@ function activity(s: Snapshot, f: Fmt): Html {
     ],
   })}
   ${panel({
+    id: PANEL.tools,
     title: "Alat yang dipakai",
     sub: `Dari ${s.range} hari terakhir${hidden > 0 ? `, 12 teratas dari ${a.tools.length}` : ""}`,
     body: ranked(toolRows, "Belum ada alat yang dipakai."),
@@ -976,6 +991,7 @@ function people(s: Snapshot, f: Fmt): Html {
       })
     : "";
   const requests = panel({
+    id: PANEL.requests,
     title: "Permintaan akses",
     sub: `Dari tombol “Minta akses” di website. Izinkan dengan mengirim perintahnya ke ${s.botName} di WhatsApp.`,
     body: s.accessRequests.length
@@ -1173,8 +1189,8 @@ function features(s: Snapshot, f: Fmt): Html {
 </div>
 ${panel({
   title: "Titip pesan ke orang lain",
-  sub: e.users ? `${e.users} orang boleh · ${f.int(e.today)}/${e.dailyLimit} urusan baru hari ini · ${e.active} sedang berjalan` : "Belum ada yang diizinkan (ERRAND_USERS)",
-  tools: e.users && e.dailyLimit ? html`<span class="panel-meter">${meter(e.today, e.dailyLimit, "Urusan baru hari ini terhadap batas harian", 0.7, 1)}</span>` : "",
+  sub: e.users ? `${e.users} orang boleh · ${f.int(e.last24h)}/${e.dailyLimit} urusan baru dalam 24 jam · ${e.active} sedang berjalan` : "Belum ada yang diizinkan (ERRAND_USERS)",
+  tools: e.users && e.dailyLimit ? html`<span class="panel-meter">${meter(e.last24h, e.dailyLimit, "Urusan baru dalam 24 jam terhadap batasnya", 0.7, 1)}</span>` : "",
   body: [errandRows, html`<p class="note">Isi urusan dan pesannya tidak ditampilkan di sini.</p>`],
 })}`,
   );
@@ -1254,6 +1270,7 @@ function system(s: Snapshot, f: Fmt): Html {
     html`<div class="gauges">${gauges}</div>
 <div class="grid grid-even">
   ${panel({
+    id: PANEL.details,
     title: "Rincian",
     body: html`<dl class="kv">
       ${fact("Versi", sys.version ? html`<code>${sys.version.hash}</code> · ${sys.version.date}` : "tidak diketahui")}
@@ -1267,7 +1284,7 @@ function system(s: Snapshot, f: Fmt): Html {
   })}
   ${panel({ title: "Koneksi WhatsApp", sub: "Sejak menyala, terbaru di atas", body: connection })}
 </div>
-${panel({ title: "Error dan peringatan", sub: "Dari log, sejak menyala (hilang saat restart). Satu baris per kejadian, tanpa isi pesan.", body: problems })}`,
+${panel({ id: PANEL.log, title: "Error dan peringatan", sub: "Dari log, sejak menyala (hilang saat restart). Satu baris per kejadian, tanpa isi pesan.", body: problems })}`,
   );
 }
 
@@ -1344,6 +1361,7 @@ function security(s: Snapshot, ctx: ViewContext, f: Fmt): Html {
     body: sessions,
   })}
   ${panel({
+    id: PANEL.logins,
     title: "Riwayat login",
     sub: sec.failures24h ? html`<strong class="text-serious">${sec.failures24h} gagal</strong> dalam 24 jam terakhir` : "Tidak ada yang gagal dalam 24 jam terakhir",
     body: logins,

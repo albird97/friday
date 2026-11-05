@@ -64,16 +64,20 @@
   }
 
   // ── Copy buttons ──────────────────────────────────────────────────────────────────────────────────────────────
+  const copyTimers = new WeakMap();
   async function copy(text, button) {
     const label = $("[data-copy-label]", button);
-    const before = label?.textContent;
+    if (!label) return;
+    // Kept on the button, so a second click while "Tersalin" shows doesn't remember that as the label.
+    label.dataset.original ??= label.textContent;
     try {
       await navigator.clipboard.writeText(text);
-      if (label) label.textContent = "Tersalin";
+      label.textContent = "Tersalin";
     } catch {
-      if (label) label.textContent = "Gagal menyalin";
+      label.textContent = "Gagal menyalin";
     }
-    setTimeout(() => label && before && (label.textContent = before), 1600);
+    clearTimeout(copyTimers.get(button));
+    copyTimers.set(button, setTimeout(() => (label.textContent = label.dataset.original), 1600));
   }
   document.addEventListener("click", (event) => {
     const button = event.target.closest("[data-copy], [data-copy-log]");
@@ -149,7 +153,9 @@
     const marks = $$("[data-tip]", chart);
     if (marks.length === 0) return;
     const at = marks.indexOf(tipped);
-    const steps = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+    // In the day-and-hour map, up and down move a day (a row of 24 hours); elsewhere every arrow moves one mark.
+    const row = chart.classList.contains("heat") ? 24 : 1;
+    const steps = { ArrowRight: 1, ArrowDown: row, ArrowLeft: -1, ArrowUp: -row };
     let next;
     if (event.key in steps) next = at < 0 ? (steps[event.key] > 0 ? 0 : marks.length - 1) : Math.max(0, Math.min(marks.length - 1, at + steps[event.key]));
     else if (event.key === "Home") next = 0;
@@ -238,8 +244,10 @@
         button.append(...cell.childNodes);
         cell.append(button);
         button.addEventListener("click", () => {
+          // Names start A→Z, numbers biggest first; a second click on the same column flips it.
+          const first = cell.dataset.sort === "num" ? "descending" : "ascending";
           const current = sortState.get(index);
-          const dir = current?.column === column && current.dir === "descending" ? "ascending" : "descending";
+          const dir = current?.column === column ? (current.dir === "descending" ? "ascending" : "descending") : first;
           sortState.set(index, { column, dir });
           sortTable(table, column, dir);
         });
@@ -349,8 +357,40 @@
     if (text && refreshText) refreshText.textContent = text;
   }
 
+  // A failed refresh has to be seen, phones included (the top bar hides its text there): a note on top of the
+  // page saying how old the figures are, and the live dot stops pulsing, until a refresh works again.
+  function showStale() {
+    document.documentElement.dataset.offline = "1";
+    const updated = $(".sections", main)?.dataset.updated;
+    let note = $("[data-stale-note]", main);
+    if (!note) {
+      note = document.createElement("div");
+      note.className = "stale-note";
+      note.setAttribute("role", "alert");
+      note.dataset.staleNote = "";
+      const text = document.createElement("p");
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.className = "btn btn-small";
+      retry.textContent = "Coba lagi";
+      retry.addEventListener("click", () => void refresh());
+      note.append(text, retry);
+      main.prepend(note);
+    }
+    note.firstChild.textContent = `Dashboard gagal diperbarui, jadi angka di bawah dari ${updated ?? "tadi"} dan bisa sudah berubah. Cek koneksi internet, atau apakah server Friday menyala.`;
+  }
+
+  function clearStale() {
+    delete document.documentElement.dataset.offline;
+    $("[data-stale-note]", main)?.remove();
+  }
+
+  /** Scroll positions of the page's scrolling boxes (open tables, wide tables, the log), by order in the page. */
+  const scrollers = () => $$(".tbl-wrap, .log-list", main);
+
   function swap(html) {
     const open = new Set($$("details[data-keep][open]", main).map((details) => details.dataset.keep));
+    const scrolled = scrollers().map((box) => [box.scrollTop, box.scrollLeft]);
     const template = document.createElement("template");
     template.innerHTML = html; // our own server's markup for this page, same as the first load
     document.documentElement.dataset.refreshed = "1";
@@ -360,6 +400,10 @@
     enhanceTables();
     applyLogFilter();
     watchSections();
+    scrollers().forEach((box, i) => {
+      if (!scrolled[i]) return;
+      [box.scrollTop, box.scrollLeft] = scrolled[i];
+    });
   }
 
   async function refresh(nextRange = range) {
@@ -380,6 +424,7 @@
       }
       if (!response.ok) throw new Error(String(response.status));
       swap(await response.text());
+      clearStale();
       range = nextRange;
       lastRefresh = Date.now();
       const updated = $(".sections", main)?.dataset.updated;
@@ -388,6 +433,7 @@
       sections?.classList.remove("is-stale");
       markRange(range);
       setRefreshState("error", "Gagal memperbarui");
+      showStale();
     } finally {
       busy = false;
       if (queued !== undefined) {
@@ -398,13 +444,15 @@
     }
   }
 
-  // The timed refresh waits while someone is mid-action: a confirmation open, or keyboard focus on something in the
-  // page that the refresh would replace. It waits three rounds at most, so a forgotten focus can't freeze the page.
+  // The timed refresh waits while someone is mid-action: a confirmation open, or keyboard focus (not a mouse click)
+  // on something in the page that the refresh would replace. It waits three rounds at most, so a forgotten focus
+  // can't freeze the page.
   let deferred = 0;
   function busyHere() {
     if (dialog?.open) return true;
     const focused = document.activeElement;
-    return Boolean(focused && focused !== main && main.contains(focused) && deferred < 3);
+    const keyboard = focused?.matches?.(":focus-visible") ?? false;
+    return Boolean(focused && focused !== main && main.contains(focused) && keyboard && deferred < 3);
   }
 
   function schedule() {
@@ -427,19 +475,19 @@
   });
   $("[data-refresh-now]")?.addEventListener("click", () => void refresh());
 
-  for (const link of $$("[data-range-link]")) {
-    link.addEventListener("click", (event) => {
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
-      event.preventDefault();
-      const next = Number(link.dataset.rangeLink);
-      markRange(next);
-      const url = new URL(location.href);
-      url.searchParams.set("range", String(next));
-      url.searchParams.delete("done");
-      history.replaceState(null, "", url.pathname + url.search + url.hash);
-      void refresh(next);
-    });
-  }
+  // One listener for every period link: the phone's copy sits inside the content the refresh replaces.
+  document.addEventListener("click", (event) => {
+    const link = event.target.closest?.("[data-range-link]");
+    if (!link || event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+    event.preventDefault();
+    const next = Number(link.dataset.rangeLink);
+    markRange(next);
+    const url = new URL(location.href);
+    url.searchParams.set("range", String(next));
+    url.searchParams.delete("done");
+    history.replaceState(null, "", url.pathname + url.search + url.hash);
+    void refresh(next);
+  });
 
   enhanceTables();
   applyLogFilter();

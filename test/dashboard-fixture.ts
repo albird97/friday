@@ -178,6 +178,7 @@ export function sampleSnapshot(opts: FixtureOptions = {}): Snapshot {
       refused: 0,
       people: empty ? 0 : 5,
       contacts,
+      guests: empty ? 0 : 1,
       p50Ms: today.p50Ms,
       p95Ms: today.p95Ms,
       yesterday: { dollars: yesterday.dollars, messages: yesterday.messages },
@@ -246,7 +247,7 @@ export function sampleSnapshot(opts: FixtureOptions = {}): Snapshot {
       errands: {
         users: 2,
         active: 1,
-        today: 1,
+        last24h: 1,
         dailyLimit: 10,
         recent: empty
           ? []

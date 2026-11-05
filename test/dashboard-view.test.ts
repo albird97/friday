@@ -64,6 +64,39 @@ describe("dashboard page", () => {
     assert.match(renderMain(stopped, ctx), /name="action" value="resume"[\s\S]*?Nyalakan lagi/);
   });
 
+  it("doesn't call Friday on while it's stopped", () => {
+    const s = sampleSnapshot();
+    s.status.stopped = true;
+    const html = renderMain(s, ctx);
+    assert.match(html, /<p class="health-sub">Dihentikan, server tetap jalan/);
+    assert.doesNotMatch(html, /<p class="health-sub">Friday menyala/);
+  });
+
+  it("names whatever coloured the server tile", () => {
+    const s = sampleSnapshot();
+    s.system.host.load = [4.2, 3, 2];
+    assert.match(renderMain(s, ctx), /dot dot-warning"><span class="dot-mark" aria-hidden="true"><\/span>Beban CPU 2,1 per CPU/);
+    s.system.host.load = [0.4, 0.4, 0.4];
+    s.system.host.memFree = s.system.host.memTotal * 0.03;
+    assert.match(renderMain(s, ctx), /dot dot-serious"><span class="dot-mark" aria-hidden="true"><\/span>RAM server 97%/);
+  });
+
+  it("links each attention item to the panel it names", () => {
+    const html = renderMain(sampleSnapshot({ trouble: true }), ctx);
+    for (const id of ["permintaan-akses", "log-masalah", "rincian-sistem"]) {
+      assert.match(html, new RegExp(`href="#${id}"`), `link to ${id}`);
+      assert.match(html, new RegExp(`<section class="panel[^"]*" id="${id}"`), `panel ${id}`);
+    }
+  });
+
+  it("counts contacts and guests helped today apart", () => {
+    const s = sampleSnapshot();
+    s.today.people = 5;
+    s.today.contacts = 5;
+    s.today.guests = 2;
+    assert.match(renderMain(s, ctx), /dari 5 kontak · 2 tamu di grup/);
+  });
+
   it("lets the admin wake a paused group and sign other browsers out", () => {
     const html = renderMain(sampleSnapshot(), ctx);
     assert.match(html, /name="action" value="wake"><input type="hidden" name="range" value="30"><input type="hidden" name="chat" value="120363000000000003@g.us">/);

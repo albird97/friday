@@ -11,6 +11,7 @@ export const startedAt = Date.now();
 export type WhatsAppState = "connecting" | "waitingForScan" | "open" | "closed" | "loggedOut";
 /** detail: the disconnect status code for "closed" (e.g. "428"), the bot's number for "open". */
 export type ConnectionEvent = { at: number; state: WhatsAppState; detail?: string };
+/** since: open since, or else down since (Friday's start, or the drop); trying to reconnect doesn't move it. */
 export type WhatsAppStatus = { state: WhatsAppState; since: number; number?: string; reconnects: number };
 
 const MAX_EVENTS = 50;
@@ -24,10 +25,9 @@ export function noteWhatsApp(state: WhatsAppState, detail?: string): void {
     if (whatsapp.number !== undefined || events.some((e) => e.state === "open")) whatsapp.reconnects++;
     whatsapp.number = detail;
   }
-  if (state !== whatsapp.state) {
-    whatsapp.state = state;
-    whatsapp.since = now;
-  }
+  // While down, whatsapp.ts flips between closed and connecting every few seconds; only opening or dropping counts.
+  if ((state === "open") !== (whatsapp.state === "open")) whatsapp.since = now;
+  whatsapp.state = state;
   const last = events.at(-1);
   if (last?.state === state && last.detail === detail) return;
   events.push({ at: now, state, ...(detail !== undefined && { detail }) });
@@ -84,13 +84,18 @@ export function recordTool(tool: string, ok: boolean, ms: number, at = new Date(
   }
 }
 
-const TURNS_KEPT_DAYS = 180;
+const PEOPLE_KEPT_DAYS = 180; // the privacy page's promise for who used Friday when, and what it cost
 const TOOLS_KEPT_DAYS = 400;
 const LOGINS_KEPT = 500;
 
-/** Drops old dashboard records and expired sign-ins. Run at startup and daily. */
+/** Drops records older than they're kept, and expired sign-ins. Run at startup and daily. */
 export function pruneMonitor(now = Date.now()): void {
-  db.prepare("DELETE FROM turns WHERE at < ?").run(now - TURNS_KEPT_DAYS * 86_400_000);
+  const peopleSince = now - PEOPLE_KEPT_DAYS * 86_400_000;
+  db.prepare("DELETE FROM turns WHERE at < ?").run(peopleSince);
+  // Per person and day: Claude's tokens (the cost estimates) and the messages counted against the daily limit.
+  db.prepare("DELETE FROM token_usage WHERE day < ?").run(localDay(new Date(peopleSince)));
+  db.prepare("DELETE FROM usage WHERE day < ?").run(localDay(new Date(peopleSince)));
+  db.prepare("DELETE FROM usage_alerts WHERE day < ?").run(localDay(new Date(peopleSince))); // "person:<number>" keys too
   db.prepare("DELETE FROM tool_usage WHERE day < ?").run(localDay(new Date(now - TOOLS_KEPT_DAYS * 86_400_000)));
   db.prepare("DELETE FROM admin_sessions WHERE expires_at <= ?").run(now);
   db.prepare("DELETE FROM admin_logins WHERE id NOT IN (SELECT id FROM admin_logins ORDER BY id DESC LIMIT ?)").run(LOGINS_KEPT);

@@ -1,4 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import net from "node:net";
 import { config } from "../config.js";
 import { db } from "../db.js";
 import { isPasswordHash, verifyPassword } from "./password.js";
@@ -28,11 +29,29 @@ export async function checkCredentials(username: string, password: string): Prom
 }
 
 // Wrong tries, in memory (a restart forgets them). 5 from one address within 15 minutes block that address for 15
-// minutes; 30 from anywhere block every sign-in, so spreading the guesses over many addresses doesn't help.
+// minutes; 30 from anywhere block every sign-in, so spreading the guesses over many addresses doesn't help. Addresses
+// that signed in before are exempt from that everyone-block (not from their own), so a crowd of strangers can't keep
+// the admin out of the dashboard from home.
 const WINDOW_MS = 15 * MINUTE;
 const BLOCK_MS = 15 * MINUTE;
 const TRIES_PER_IP = 5;
 const TRIES_IN_ALL = 30;
+
+/**
+ * Who a limit counts against: the address itself, or for IPv6 its /64, which one household or one server usually gets
+ * whole (so its many addresses count as one).
+ */
+export function limitKey(ip: string): string {
+  if (!net.isIPv6(ip) || ip.includes(".")) return ip;
+  const [head, tail] = ip.toLowerCase().split("::");
+  const front = head ? head.split(":") : [];
+  const back = tail === undefined ? [] : tail ? tail.split(":") : [];
+  const groups = tail === undefined ? front : [...front, ...Array<string>(Math.max(0, 8 - front.length - back.length)).fill("0"), ...back];
+  return `${groups
+    .slice(0, 4)
+    .map((g) => g.padStart(4, "0"))
+    .join(":")}::/64`;
+}
 
 type Tries = { at: number[]; blockedUntil: number };
 /** A block that a wrong try just started: who it covers, after how many tries in how long, and for how long. */
@@ -53,16 +72,18 @@ export function signInLimits() {
     return started;
   }
 
-  function allowed(ip: string, now = Date.now()): Allowed {
-    const until = Math.max(everyone.blockedUntil, byIp.get(ip)?.blockedUntil ?? 0);
+  /** trusted: this address signed in successfully before, so the everyone-block doesn't apply to it. */
+  function allowed(ip: string, now = Date.now(), trusted = false): Allowed {
+    const until = Math.max(trusted ? 0 : everyone.blockedUntil, byIp.get(limitKey(ip))?.blockedUntil ?? 0);
     return until > now ? { ok: false, retryAfterMs: until - now } : { ok: true };
   }
 
   /** Counts a wrong try. Returns the block it started, if it started one. */
   function failed(ip: string, now = Date.now()): Block | undefined {
     for (const [other, tries] of byIp) if (recent(tries, now).length === 0 && tries.blockedUntil <= now) byIp.delete(other);
-    const mine = byIp.get(ip) ?? { at: [], blockedUntil: 0 };
-    byIp.set(ip, mine);
+    const key = limitKey(ip);
+    const mine = byIp.get(key) ?? { at: [], blockedUntil: 0 };
+    byIp.set(key, mine);
     recent(everyone, now);
     mine.at.push(now);
     everyone.at.push(now);
@@ -72,7 +93,7 @@ export function signInLimits() {
   }
 
   function succeeded(ip: string): void {
-    byIp.delete(ip);
+    byIp.delete(limitKey(ip));
   }
 
   return { allowed, failed, succeeded };
@@ -91,6 +112,29 @@ export function recordLogin(result: LoginResult, ip: string, agent: string, at =
   db.prepare("DELETE FROM admin_logins WHERE id <= ?").run(Number(row.lastInsertRowid) - LOGINS_KEPT);
 }
 
+const TRUSTED_FOR_MS = 30 * DAY;
+
+/** Whether this address has signed in successfully in the last 30 days, or still has a session. */
+function signedInBefore(ip: string, now: number): boolean {
+  return !!db
+    .prepare(
+      `SELECT 1 FROM admin_sessions WHERE ip = ? AND expires_at > ?
+       UNION ALL SELECT 1 FROM admin_logins WHERE ip = ? AND result = 'ok' AND at > ? LIMIT 1`,
+    )
+    .get(ip, now, ip, now - TRUSTED_FOR_MS);
+}
+
+// A blocked address is logged once a minute at most: a flood of refused tries would otherwise push the real sign-ins
+// out of the 500 rows kept.
+const blockedLogged = new Map<string, number>();
+function noteBlocked(ip: string, agent: string, now: number): void {
+  const key = limitKey(ip);
+  if (now - (blockedLogged.get(key) ?? 0) < MINUTE) return;
+  for (const [other, at] of blockedLogged) if (now - at >= MINUTE) blockedLogged.delete(other);
+  blockedLogged.set(key, now);
+  recordLogin("blocked", ip, agent, now);
+}
+
 export type SignIn = { username: string; password: string; ip: string; agent: string };
 export type SignInResult = { result: "ok"; session: NewSession } | { result: "wrong"; block?: Block } | { result: "blocked"; retryAfterMs: number };
 
@@ -103,9 +147,10 @@ let queue: Promise<unknown> = Promise.resolve();
  */
 export function signIn({ username, password, ip, agent }: SignIn): Promise<SignInResult> {
   const run = queue.then(async (): Promise<SignInResult> => {
-    const allowed = loginAllowed(ip);
+    const now = Date.now();
+    const allowed = loginAllowed(ip, now, signedInBefore(ip, now));
     if (!allowed.ok) {
-      recordLogin("blocked", ip, agent);
+      noteBlocked(ip, agent, now);
       return { result: "blocked", retryAfterMs: allowed.retryAfterMs };
     }
     if (!(await checkCredentials(username, password))) {

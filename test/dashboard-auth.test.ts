@@ -8,10 +8,10 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { after, beforeEach, describe, it } from "node:test";
-import { checkCredentials, dashboardConfigured, sessionFor, signInLimits, startSession } from "../src/admin/auth.js";
+import { checkCredentials, dashboardConfigured, limitKey, sessionFor, signInLimits, startSession } from "../src/admin/auth.js";
 import { snapshot } from "../src/admin/data.js";
 import { hashPassword, isPasswordHash, verifyPassword } from "../src/admin/password.js";
-import { asset, describeAgent, handleAdmin } from "../src/admin/server.js";
+import { asset, blockNotices, describeAgent, handleAdmin } from "../src/admin/server.js";
 import { config } from "../src/config.js";
 import { db } from "../src/db.js";
 import { activePauses, EVERYWHERE, pause, resume } from "../src/pause.js";
@@ -125,6 +125,7 @@ const SECURITY_HEADERS = {
   "x-robots-tag": "noindex, nofollow",
   "cross-origin-opener-policy": "same-origin",
   "permissions-policy": "camera=(), microphone=(), geolocation=()",
+  "strict-transport-security": "max-age=31536000",
 };
 
 function assertSecurityHeaders(res: Response): void {
@@ -287,7 +288,8 @@ describe("signing in to the dashboard", () => {
     assertSecurityHeaders(blocked);
     assert.equal((await signIn(ip, "tebakan-lagi")).status, 429);
     assert.equal(alerts().length, 1, "one message per block");
-    assert.deepEqual(logins(ip).map((r) => r.result), ["wrong", "wrong", "wrong", "wrong", "wrong", "blocked", "blocked"]);
+    // Refused tries are logged once a minute at most, so a flood can't push real sign-ins out of the history.
+    assert.deepEqual(logins(ip).map((r) => r.result), ["wrong", "wrong", "wrong", "wrong", "wrong", "blocked"]);
 
     assert.equal((await signIn("198.51.100.8")).status, 303);
   });
@@ -296,7 +298,39 @@ describe("signing in to the dashboard", () => {
     const ip = "198.51.100.9";
     const statuses = await Promise.all(Array.from({ length: 8 }, (_, i) => signIn(ip, `serbuan-${i}`).then((res) => res.status)));
     assert.deepEqual(statuses.sort(), [401, 401, 401, 401, 401, 429, 429, 429]);
-    assert.equal(toAdmin().filter((text) => text.includes(ip)).length, 1);
+    // The block above was already reported this hour: this one waits for the hourly summary instead.
+    assert.equal(toAdmin().filter((text) => text.includes(ip)).length, 0);
+  });
+
+  it("counts an IPv6 /64 as one address", async () => {
+    for (let i = 1; i <= 5; i++) assert.equal((await signIn(`2001:db8:abcd:12::${i}`, `v6-${i}`)).status, 401);
+    assert.equal((await signIn("2001:db8:abcd:12:ffff::9")).status, 429, "another address in the same /64 is blocked too");
+    assert.equal((await signIn("2001:db8:abcd:13::1")).status, 303, "the next /64 is not");
+    assert.equal(limitKey("2001:db8::1"), "2001:0db8:0000:0000::/64");
+    assert.equal(limitKey("203.0.113.5"), "203.0.113.5");
+  });
+
+  it("keeps addresses that signed in before out of the everyone-block", () => {
+    const limits = signInLimits();
+    const now = Date.now();
+    for (let i = 0; i < 30; i++) limits.failed(`192.0.2.${i}`, now);
+    assert.equal(limits.allowed("198.51.100.77", now).ok, false, "a new address waits");
+    assert.equal(limits.allowed("198.51.100.77", now, true).ok, true, "one that signed in before doesn't");
+  });
+
+  it("reports the first block at once and sums up the rest once an hour", () => {
+    const texts: string[] = [];
+    const notices = blockNotices((text) => texts.push(text));
+    const block = (ip: string) => ({ scope: "ip" as const, ip, tries: 5, withinMs: 15 * MINUTE, forMs: 15 * MINUTE });
+    const start = Date.now();
+    notices.note(block("192.0.2.1"), start);
+    notices.note(block("192.0.2.2"), start + MINUTE);
+    notices.note(block("192.0.2.3"), start + 2 * MINUTE);
+    assert.equal(texts.length, 1);
+    assert.match(texts[0], /192\.0\.2\.1/);
+    notices.flush(start + 60 * MINUTE);
+    assert.equal(texts.length, 2);
+    assert.match(texts[1], /2 blokir lagi.*dari 2 IP \(terakhir 192\.0\.2\.3\)/);
   });
 
   it("ends the session on sign-out, but not on a forged one", async () => {

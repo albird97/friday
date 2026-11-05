@@ -12,7 +12,7 @@ import { addContact, takeDailyQuota } from "../src/contacts.js";
 import { db } from "../src/db.js";
 import { setContext } from "../src/groupcontext.js";
 import { setChatModel } from "../src/model.js";
-import { noteWhatsApp, recordTool, recordTurn, startedAt, whatsappStatus, type Outcome } from "../src/monitor.js";
+import { noteWhatsApp, pruneMonitor, recordTool, recordTurn, startedAt, whatsappStatus, type Outcome } from "../src/monitor.js";
 import { EVERYWHERE, pause } from "../src/pause.js";
 import { saveSession } from "../src/session.js";
 import { setStyle } from "../src/styles.js";
@@ -141,8 +141,20 @@ describe("dashboard money", () => {
     const { month } = await view();
     assert.equal(month.month, "2026-11");
     assert.equal(cents(month.dollars), 8.73);
-    assert.equal(cents(month.projected), 52.38); // $8.73 in 5 days, carried to 30
-    assert.deepEqual([month.previous.month, cents(month.previous.dollars), cents(month.previous.toDate)], ["2026-10", 9.5, 4.5]);
+    assert.equal(cents(month.projected), 59.3); // $8.73 in 4 days and 10 hours, carried to 30 days
+    // Up to 10:00 on 5 October: the $4 of the 3rd, and 10/24 of the 5th's $0.50.
+    assert.deepEqual([month.previous.month, cents(month.previous.dollars), cents(month.previous.toDate)], ["2026-10", 9.5, 4.21]);
+  });
+
+  it("counts only the part of today that has passed", async () => {
+    spent(ADMIN, "2026-10-01T12:00:00", { output: 200_000 }); // $4 on the 1st of last month
+    spent(ADMIN, "2026-10-02T12:00:00", { output: 100_000 }); // $2 on the 2nd
+    spent(ADMIN, "2026-11-01T05:00:00", { output: 50_000 }); // $1 this morning
+    const early = await view({ now: jakarta("2026-11-01T06:00:00") });
+    // At 06:00 the month is a quarter of a day old, counted as the half day minimum; last month to date is a quarter of 1 October's $4.
+    assert.deepEqual([cents(early.month.projected), cents(early.month.previous.toDate), cents(early.month.previous.dollars)], [60, 1, 6]);
+    const evening = await view({ now: jakarta("2026-11-01T18:00:00") });
+    assert.deepEqual([cents(evening.month.projected), cents(evening.month.previous.toDate)], [40, 3]);
   });
 
   it("compares a short previous month in full", async () => {
@@ -150,7 +162,7 @@ describe("dashboard money", () => {
     spent(ADMIN, "2026-02-28T12:00:00", { output: 100_000 });
     spent(ADMIN, "2026-03-31T09:00:00", { output: 50_000 });
     const end = await view({ now: jakarta("2026-03-31T10:00:00") });
-    assert.deepEqual([cents(end.month.previous.dollars), cents(end.month.previous.toDate), cents(end.month.projected)], [3, 3, 1]);
+    assert.deepEqual([cents(end.month.previous.dollars), cents(end.month.previous.toDate), cents(end.month.projected)], [3, 3, 1.02]);
     const mid = await view({ now: jakarta("2026-03-15T10:00:00") });
     assert.equal(cents(mid.month.previous.toDate), 1);
   });
@@ -210,7 +222,8 @@ describe("dashboard messages", () => {
     assert.equal(s.daily[0].p50Ms, null);
 
     const { day, dollars, ...rest } = s.today;
-    assert.deepEqual(rest, { messages: 6, failed: 1, refused: 1, people: 3, contacts: 2, p50Ms: 4000, p95Ms: 8000, yesterday: { dollars: 0, messages: 2 } });
+    // Albert and Sarah of the 2 contacts, and Dodi in the group.
+    assert.deepEqual(rest, { messages: 6, failed: 1, refused: 1, people: 2, contacts: 2, guests: 1, p50Ms: 4000, p95Ms: 8000, yesterday: { dollars: 0, messages: 2 } });
     // Eight good answers in the range: 1, 2, 2, 3, 4, 5, 6 and 8 seconds.
     assert.deepEqual([s.activity.total, s.activity.failed, s.activity.refused, s.activity.p50Ms, s.activity.p95Ms], [10, 1, 1, 3000, 8000]);
   });
@@ -322,32 +335,62 @@ describe("dashboard people", () => {
     assert.doesNotMatch(JSON.stringify(s), /secret|albert@example\.com/, "no tokens, keys or addresses");
   });
 
-  it("lists guests from groups, and access requests from people who aren't contacts yet", async () => {
+  it("finds a person's own model, style and schedules in a chat WhatsApp names by LID", async () => {
+    const LID = "201234567890123@lid"; // how Baileys 7 often names a 1:1 chat, instead of by number
+    turn(WIFE, chatOf(WIFE), "Sarah", "2026-11-01T09:00:00", 1000);
+    turn(WIFE, LID, "Sarah", "2026-11-05T09:00:00", 1000); // her latest
+    turn(WIFE, G1, "Keluarga", "2026-11-05T09:30:00", 1000);
+    turn(ADMIN, "cli", "terminal", "2026-11-05T09:40:00", 1000);
+    turn(ADMIN, "errand:3", "errand #3 Resto", "2026-11-05T09:45:00", 1000);
+    setChatModel(chatOf(WIFE), "claude-sonnet-5-5");
+    setChatModel(LID, "claude-haiku-5-5");
+    setStyle(chatOf(WIFE), "Sarah", "formal");
+    setChatModel("cli", "claude-haiku-5-5"); // the terminal's, not Albert's own chat's
+    setChatModel("errand:3", "claude-haiku-5-5");
+    reminder({ chatId: LID, by: WIFE.number, text: "Rahasia Sarah", dueAt: NOW + HOUR });
+    reminder({ chatId: "209999999999999@lid", by: "6289999999999", text: "Orang lain", dueAt: NOW + 2 * HOUR }); // no turn there
+    reminder({ chatId: "6289999999999@s.whatsapp.net", by: "6289999999999", text: "Orang lain juga", dueAt: NOW + 3 * HOUR });
+
+    const s = await view();
+    const [albert, sarah] = s.people;
+    assert.deepEqual([sarah.ownModel, sarah.style], ["claude-haiku-5-5", "formal"], "the latest chat's model; the style of the chat that has one");
+    assert.deepEqual([albert.ownModel, albert.style], [null, null]);
+    assert.deepEqual(
+      s.schedules.upcoming.map((r) => [r.where, r.isGroup, r.text]),
+      [["Sarah", false, null], ["chat pribadi", false, null], ["+6289999999999", false, null]],
+    );
+  });
+
+  it("lists guests from groups, and the last 30 days' access requests from people who aren't contacts yet", async () => {
     addContact(BUDI.name, BUDI.number);
+    const GINA: Person = { name: "Gina", number: "6286000000003" }; // a contact once, removed since
     turn(DODI, G1, "Keluarga", "2026-11-05T09:45:00", 3000);
     turn(DODI, G1, "Keluarga", "2026-11-04T09:45:00", 3000);
     turn({ name: "Eko", number: "6286000000001" }, G1, "Keluarga", "2026-10-01T09:45:00", 3000); // before the range
+    turn(GINA, chatOf(GINA), "Gina", "2026-11-05T08:00:00", 3000);
     spent(DODI, "2026-11-05T09:45:00", { output: 25_000 });
-    spent({ name: "Fani", number: "6286000000002" }, "2026-11-03T09:45:00", { output: 50_000 }); // tokens, no turn
+    spent(GINA, "2026-11-05T08:00:00", { output: 50_000 });
+    spent({ name: "Fani", number: "6286000000002" }, "2026-11-03T09:45:00", { output: 50_000 }); // tokens, no turn in a group
     turn(WIFE, G1, "Keluarga", "2026-11-05T09:00:00", 3000);
     const ask = db.prepare("INSERT INTO access_requests (number, name, day) VALUES (?, ?, ?)");
     ask.run("6287000000001", "Rina", "2026-11-04");
     ask.run(BUDI.number, "Budi", "2026-11-03"); // added since
     ask.run("6287000000002", "Tono", "2026-11-05");
+    ask.run("6287000000003", "Wati", "2026-10-07"); // 29 days ago: still on the list
+    ask.run("6287000000004", "Yuni", "2026-10-06"); // 30 days ago: no longer
 
     const s = await view();
     assert.deepEqual(
       s.guests.map((g) => ({ ...g, dollarsRange: cents(g.dollarsRange) })),
-      [
-        { number: DODI.number, name: "Dodi", messagesRange: 2, dollarsRange: 0.5, lastActiveAt: jakarta("2026-11-05T09:45:00") },
-        { number: "6286000000002", name: "Fani", messagesRange: 0, dollarsRange: 1, lastActiveAt: null },
-      ],
+      [{ number: DODI.number, name: "Dodi", messagesRange: 2, dollarsRange: 0.5, lastActiveAt: jakarta("2026-11-05T09:45:00") }],
     );
+    assert.deepEqual([s.today.people, s.today.contacts, s.today.guests], [1, 3, 1], "Sarah; Dodi in the group; Gina in neither");
     assert.deepEqual(s.accessRequests, [
       { number: "6287000000002", name: "Tono", day: "2026-11-05" },
       { number: "6287000000001", name: "Rina", day: "2026-11-04" },
+      { number: "6287000000003", name: "Wati", day: "2026-10-07" },
     ]);
-    assert.deepEqual(s.attention.at(-1), { code: "accessRequests", severity: "info", count: 2 });
+    assert.deepEqual(s.attention.at(-1), { code: "accessRequests", severity: "info", count: 3 });
   });
 });
 
@@ -415,6 +458,34 @@ describe("dashboard groups", () => {
     assert.equal(calls, 2);
   });
 
+  it("takes an empty list for no answer while Friday is known to be in groups", async (t) => {
+    seedGroups();
+    const warn = t.mock.method(console, "warn", () => {});
+    let calls = 0;
+    // Baileys resolves [] when WhatsApp doesn't answer in time.
+    const outbox: Outbox = { ...whatsapp(), groups: () => (++calls === 1 ? whatsapp().groups!() : Promise.resolve([])) };
+    await view({ outbox });
+    const empty = await view({ outbox, now: NOW + 11 * MINUTE });
+    assert.equal(calls, 2);
+    assert.deepEqual(empty.groups.filter((g) => g.inGroup).map((g) => [g.name, g.members]), [["Keluarga Besar", 5], ["Futsal", 12]], "the last list stays");
+    await view({ outbox, now: NOW + 11 * MINUTE + 30_000 });
+    assert.equal(calls, 2, "tried again after a minute, as after a failure");
+    await view({ outbox, now: NOW + 12 * MINUTE + 1000 });
+    assert.equal(calls, 3);
+    assert.equal(warn.mock.callCount(), 1, "once per outage");
+
+    const never: Outbox = { ...whatsapp(), groups: async () => [] };
+    assert.ok((await view({ outbox: never })).groups.every((g) => g.inGroup), "never listed, but known from history: assumed");
+  });
+
+  it("believes an empty list when Friday isn't known to be in any group", async () => {
+    let calls = 0;
+    const outbox: Outbox = { ...whatsapp(), groups: async () => (calls++, []) };
+    assert.deepEqual((await view({ outbox })).groups, []);
+    await view({ outbox, now: NOW + 5 * MINUTE });
+    assert.equal(calls, 1, "fresh for 10 minutes, like any list");
+  });
+
   it("never fails over WhatsApp's list, and says so once per outage", async () => {
     seedGroups();
     let calls = 0;
@@ -463,7 +534,7 @@ describe("dashboard schedules", () => {
         { kind: "reminder", dueAt: NOW + HOUR, cron: null, where: "Albert", isGroup: false, owner: "Albert", text: "Bayar listrik" },
         { kind: "reminder", dueAt: NOW + 2 * HOUR, cron: null, where: "Sarah", isGroup: false, owner: "Sarah", text: null },
         { kind: "message", dueAt: NOW + 3 * HOUR, cron: null, where: "Keluarga", isGroup: true, owner: "Sarah", text: "Selamat pagi semua" },
-        { kind: "reminder", dueAt: NOW + 4 * HOUR, cron: null, where: "6289999999999@s.whatsapp.net", isGroup: false, owner: "+6289999999999", text: null },
+        { kind: "reminder", dueAt: NOW + 4 * HOUR, cron: null, where: "+6289999999999", isGroup: false, owner: "+6289999999999", text: null },
         { kind: "reminder", dueAt: NOW + 5 * HOUR, cron: null, where: "Sarah", isGroup: false, owner: "Albert", text: "Jemput Albert" },
         { kind: "task", dueAt: NOW + DAY, cron: "0 7 * * 4", where: "Futsal Kamis", isGroup: true, owner: "Albert", text: "Kirim polling futsal" },
       ],
@@ -541,6 +612,7 @@ describe("dashboard attention", () => {
 
       noteWhatsApp("closed", "428");
       const closed = whatsappStatus().since;
+      assert.equal(closed, scan, "still down since the link was lost");
       const down = (s: { attention: { code: string }[] }) => s.attention.some((a) => a.code === "whatsappDown");
       assert.equal(down(await view({ now: closed + 30_000 })), false, "reconnecting by itself");
       assert.equal(down(await view({ now: closed + 61_000 })), true);
@@ -554,6 +626,29 @@ describe("dashboard attention", () => {
       s.connection.slice(0, 3).map((e) => [e.state, e.detail]),
       [["open", BOT], ["closed", "428"], ["waitingForScan", undefined]],
     );
+  });
+
+  it("keeps WhatsApp down since the first drop while it keeps trying to reconnect", async (t) => {
+    t.mock.timers.enable({ apis: ["Date"], now: NOW });
+    try {
+      noteWhatsApp("closed", "408");
+      // whatsapp.ts tries again 3 seconds after each close, and each try soon closes again.
+      for (let flip = 1; flip <= 200; flip++) {
+        t.mock.timers.tick(3000);
+        if (flip % 2) noteWhatsApp("connecting");
+        else noteWhatsApp("closed", "408");
+      }
+      assert.equal(Date.now(), NOW + 10 * MINUTE);
+      const s = await view({ now: Date.now() });
+      assert.deepEqual(s.attention.find((a) => a.code === "whatsappDown"), { code: "whatsappDown", severity: "critical", state: "closed", since: NOW });
+      assert.equal(s.status.whatsapp.since, NOW);
+      t.mock.timers.tick(3000);
+      noteWhatsApp("connecting");
+      noteWhatsApp("open", BOT);
+      assert.equal(whatsappStatus().since, NOW + 10 * MINUTE + 3000, "open since it connected again");
+    } finally {
+      if (whatsappStatus().state !== "open") noteWhatsApp("open", BOT);
+    }
   });
 
   it("notices when the newest backup is over 36 hours old", async () => {
@@ -651,7 +746,7 @@ describe("dashboard features and settings", () => {
       groupWorkouts: { active: 2, range: 3 },
       groupContext: { groups: 2 },
     });
-    assert.deepEqual([errands.users, errands.active, errands.today, errands.dailyLimit], [1, 3, 1, config.ERRAND_DAILY_LIMIT]);
+    assert.deepEqual([errands.users, errands.active, errands.last24h, errands.dailyLimit], [1, 3, 1, config.ERRAND_DAILY_LIMIT]);
     assert.equal(errands.recent.length, 10);
     assert.deepEqual(errands.recent[0], { id: errands.recent[0].id, requester: "Sarah", target: "Resto baru", status: "done", turns: 2, updatedAt: NOW - 30_000 });
     assert.deepEqual(errands.recent.slice(1).map((e) => e.target), ["Resto 11", "Resto 10", "Resto 9", "Resto 8", "Resto 7", "Resto 6", "Resto 5", "Resto 4", "Resto 3"]);
@@ -670,6 +765,23 @@ describe("dashboard features and settings", () => {
       alertPerson: 2,
       publicUrl: "https://friday.test",
     });
+  });
+
+  it("counts errands active only while they take replies, and new ones in the last 24 hours", async () => {
+    const errand = db.prepare(
+      `INSERT INTO errands (requester_number, requester_chat, requester_name, target_number, target_chat, target_name, goal, first_message, code, status, turns, created_at, updated_at)
+       VALUES (?, ?, 'Sarah', '6287000000100', 'x', ?, 'goal', 'first message', '', ?, 1, ?, ?)`,
+    );
+    const add = (target: string, status: string, createdAt: number, updatedAt: number) => errand.run(WIFE.number, chatOf(WIFE), target, status, createdAt, updatedAt);
+    add("Resto", "active", NOW - 2 * HOUR, NOW - HOUR);
+    add("Toko", "done", NOW - 12 * HOUR, NOW - 11 * HOUR); // 22:00 yesterday: within 24 hours
+    add("Bengkel", "pending", NOW - 30 * HOUR, NOW - 30 * HOUR);
+    add("Salon", "active", NOW - 5 * DAY, NOW - 3 * DAY - MINUTE); // silent for over 3 days: takes no more replies
+    add("Apotek", "pending", NOW - 6 * DAY, NOW - 4 * DAY);
+
+    const { errands } = (await view()).integrations;
+    assert.deepEqual([errands.active, errands.last24h], [2, 2]);
+    assert.deepEqual(errands.recent.map((e) => [e.target, e.status]), [["Resto", "active"], ["Toko", "done"], ["Bengkel", "pending"], ["Salon", "expired"], ["Apotek", "pending"]]);
   });
 });
 
@@ -709,5 +821,26 @@ describe("dashboard recording", () => {
     assert.deepEqual(s.activity.tools.map((t) => [t.tool, t.calls, t.errors]), [["remember", 1, 0]]);
     assert.ok(s.status.lastTurnAt && s.status.lastTurnAt <= Date.now());
     assert.ok(s.today.dollars > 0, "the fake API's tokens are priced");
+  });
+});
+
+describe("dashboard records", () => {
+  it("keeps who used Friday, and what it cost, 180 days at most", () => {
+    // 180 days before 10:00 on 5 November is 10:00 on 9 May.
+    turn(WIFE, chatOf(WIFE), "Sarah", "2026-05-09T09:00:00", 1000);
+    turn(WIFE, chatOf(WIFE), "Sarah", "2026-05-09T11:00:00", 1000);
+    for (const day of ["2026-05-08", "2026-05-09", "2026-11-05"]) {
+      spent(WIFE, `${day}T12:00:00`, { output: 1000 });
+      takeDailyQuota(WIFE.number, day);
+    }
+    recordTool("remember", true, 100, new Date(jakarta("2026-05-08T12:00:00"))); // tool counts aren't anyone's: 400 days
+
+    pruneMonitor(NOW);
+    const days = (table: string) => (db.prepare(`SELECT day FROM ${table} ORDER BY day`).all() as { day: string }[]).map((r) => r.day);
+    assert.deepEqual(days("turns"), ["2026-05-09"]);
+    assert.deepEqual(db.prepare("SELECT at FROM turns").all(), [{ at: jakarta("2026-05-09T11:00:00") }]);
+    assert.deepEqual(days("token_usage"), ["2026-05-09", "2026-11-05"]);
+    assert.deepEqual(days("usage"), ["2026-05-09", "2026-11-05"]);
+    assert.deepEqual(days("tool_usage"), ["2026-05-08"]);
   });
 });
