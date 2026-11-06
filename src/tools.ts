@@ -4,10 +4,6 @@ import { runSpotifyTool, spotifyTools } from "./spotify.js";
 import type { BetaToolUnion } from "@anthropic-ai/sdk/resources/beta/messages/messages.js";
 import { z } from "zod";
 import { findContact, isAdmin } from "./contacts.js";
-import { markdownToDocx } from "./docs/docx.js";
-import { markdownToPdf } from "./docs/pdf.js";
-import { sheetsToXlsx, sheetToCsv } from "./docs/sheets.js";
-import { slidesToPptx } from "./docs/slides.js";
 import { imagesEnabled, loadImage, makeImage, saveImage, type ImageResult } from "./images.js";
 import { errandTools, runErrandTool } from "./errands.js";
 import { hevyTools, runHevyTool } from "./hevyapps.js";
@@ -310,11 +306,12 @@ const BASE_TOOLS: Tool[] = [
       send_to: sendTo,
     }),
     async run(input, ctx) {
+      // The document libraries are loaded on first use: together they hold ~80 MB that Friday's memory cap can't spare.
       const data =
         input.format === "pdf"
-          ? await markdownToPdf(input.title, input.content)
+          ? await (await import("./docs/pdf.js")).markdownToPdf(input.title, input.content)
           : input.format === "docx"
-            ? await markdownToDocx(input.title, input.content)
+            ? await (await import("./docs/docx.js")).markdownToDocx(input.title, input.content)
             : Buffer.from(input.format === "md" ? `# ${input.title}\n\n${input.content}\n` : `${input.title}\n\n${input.content}\n`);
       return deliver(ctx, input.send_to, {
         data,
@@ -337,6 +334,7 @@ const BASE_TOOLS: Tool[] = [
       send_to: sendTo,
     }),
     async run(input, ctx) {
+      const { sheetsToXlsx, sheetToCsv } = await import("./docs/sheets.js");
       const data = input.format === "xlsx" ? await sheetsToXlsx(input.sheets) : sheetToCsv(input.sheets[0]);
       return deliver(ctx, input.send_to, {
         data,
@@ -370,7 +368,7 @@ const BASE_TOOLS: Tool[] = [
     }),
     async run(input, ctx) {
       return deliver(ctx, input.send_to, {
-        data: await slidesToPptx(input.title, input.subtitle, input.slides),
+        data: await (await import("./docs/slides.js")).slidesToPptx(input.title, input.subtitle, input.slides),
         fileName: fileName(input.file_name, input.title, "pptx"),
         mimetype: MIME.pptx,
         caption: input.caption,

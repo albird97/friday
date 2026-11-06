@@ -65,14 +65,20 @@ After=network-online.target
 [Service]
 User=$NAME
 WorkingDirectory=$APP
-ExecStart=$NODE_DIR/bin/node --max-old-space-size=256 --import tsx src/index.ts
+ExecStart=$NODE_DIR/bin/node --max-old-space-size=192 --import tsx src/index.ts
 Restart=always
 RestartSec=10
+# A stuck shutdown otherwise holds Friday offline for the default 90 seconds.
+TimeoutStopSec=20
 
-# Stay out of the way of the server's other apps.
-MemoryHigh=320M
-MemoryMax=400M
-MemorySwapMax=0
+# Stay out of the way of the server's other apps. The JS heap cap sits well under MemoryHigh, so V8 collects garbage
+# (or crashes and restarts) before the kernel starts squeezing the process. Squeezed at MemoryHigh with no swap, the
+# kernel evicts Friday's code pages and reads them back from disk over and over: on 6 Nov 2026 that saturated the disk
+# for four hours, slowed every app on the server and left Friday unresponsive. A little swap lets idle memory go there
+# instead.
+MemoryHigh=400M
+MemoryMax=480M
+MemorySwapMax=256M
 OOMScoreAdjust=1000
 Nice=10
 CPUWeight=20
