@@ -217,23 +217,44 @@ function formatRowsOf(result: pg.QueryArrayResult): string {
 
 // --- Notices from onehub -------------------------------------------------------------------------------------------
 
-// onehub pushes alerts it can't wait for anyone to ask about (a buyer's chat about to pass Shopee's 12-hour reply
-// limit) to the people in ONEHUB_USERS, word for word. It calls Friday's local web port with the same token Friday
-// uses to call onehub, so there's no new secret to keep. nginx doesn't route /onehub/ to Friday, and anything that
-// still arrives through it (it adds X-Forwarded-Proto) is refused: only processes on this server can send.
+// onehub pushes what it can't wait for anyone to ask about (a buyer's chat about to pass Shopee's 12-hour reply
+// limit, a courier handover sheet that was just closed) to the people in ONEHUB_USERS and the groups in
+// ONEHUB_NOTICE_GROUPS, word for word, with at most one file. It calls Friday's local web port with the same token
+// Friday uses to call onehub, so there's no new secret to keep. nginx doesn't route /onehub/ to Friday, and anything
+// that still arrives through it (it adds X-Forwarded-Proto) is refused: only processes on this server can send.
 
-export const onehubNoticesEnabled = Boolean(config.ONEHUB_API_TOKEN) && config.onehubUsers.length > 0;
+export const onehubNoticesEnabled =
+  Boolean(config.ONEHUB_API_TOKEN) && (config.onehubUsers.length > 0 || config.onehubNoticeGroups.length > 0);
+
+const NOTICE_MAX_FILE = 5 * 1024 * 1024;
 
 const NoticeInput = z.object({
   to: z.array(z.string().min(1)).min(1).max(10),
   text: z.string().trim().min(1).max(4000),
+  // Sent as a WhatsApp document with the text as its caption.
+  file: z
+    .object({
+      file_name: z.string().trim().min(1).max(120),
+      mimetype: z.string().regex(/^[\w.+-]+\/[\w.+-]+$/),
+      data: z.base64().min(1).max(Math.ceil((NOTICE_MAX_FILE * 4) / 3) + 4),
+    })
+    .optional(),
 });
 
-const NOTICE_MAX_BODY = 16 * 1024;
+const NOTICE_MAX_BODY = 8 * 1024 * 1024;
 
 type NoticeAnswer = { status: number; body: Record<string, unknown> };
 
-/** Checks and delivers one notice. Recipients outside ONEHUB_USERS are skipped, never messaged. */
+/** A group id listed in ONEHUB_NOTICE_GROUPS, or a contact (by name or number) in ONEHUB_USERS; anyone else is nobody. */
+function noticeTarget(who: string, outbox: Outbox): { name: string; chatId: string } | undefined {
+  const group = who.trim();
+  if (group.endsWith("@g.us")) return config.onehubNoticeGroups.includes(group) ? { name: group, chatId: group } : undefined;
+  const contact = findContact(who);
+  if (!contact || !config.onehubUsers.includes(contact.number)) return undefined;
+  return { name: contact.name, chatId: outbox.chatIdFor(contact.number) };
+}
+
+/** Checks and delivers one notice. Recipients outside ONEHUB_USERS and ONEHUB_NOTICE_GROUPS are skipped, never messaged. */
 export async function deliverOnehubNotice(
   headers: http.IncomingHttpHeaders,
   rawBody: string,
@@ -250,24 +271,31 @@ export async function deliverOnehubNotice(
   try {
     input = NoticeInput.parse(JSON.parse(rawBody));
   } catch {
-    return { status: 422, body: { error: "Send JSON: {\"to\": [\"name or number\"], \"text\": \"…\"}." } };
+    return { status: 422, body: { error: "Send JSON: {\"to\": [\"name, number or group id\"], \"text\": \"…\", \"file\"?: {file_name, mimetype, data (base64)}}." } };
   }
 
+  const file = input.file && {
+    data: Buffer.from(input.file.data, "base64"),
+    fileName: input.file.file_name.replace(/[\\/]/g, "-"),
+    mimetype: input.file.mimetype,
+    caption: input.text,
+  };
   const sent: string[] = [];
   const skipped: string[] = [];
   const seen = new Set<string>();
   for (const who of input.to) {
-    const contact = findContact(who);
-    if (!contact || !config.onehubUsers.includes(contact.number)) {
+    const target = noticeTarget(who, outbox);
+    if (!target) {
       skipped.push(who);
       continue;
     }
-    if (seen.has(contact.number)) continue;
-    seen.add(contact.number);
-    await outbox.sendText(outbox.chatIdFor(contact.number), input.text);
-    sent.push(contact.name);
+    if (seen.has(target.chatId)) continue;
+    seen.add(target.chatId);
+    if (file) await outbox.sendFile(target.chatId, file);
+    else await outbox.sendText(target.chatId, input.text);
+    sent.push(target.name);
   }
-  if (skipped.length) console.error(`onehub notice: not in ONEHUB_USERS, skipped: ${skipped.join(", ")}`);
+  if (skipped.length) console.error(`onehub notice: not in ONEHUB_USERS or ONEHUB_NOTICE_GROUPS, skipped: ${skipped.join(", ")}`);
   if (!sent.length) return { status: 422, body: { error: "None of the recipients may receive onehub notices.", skipped } };
   return { status: 200, body: { sent, skipped } };
 }

@@ -4,6 +4,7 @@
  */
 process.env.ONEHUB_USERS = "6281111111111";
 process.env.ONEHUB_RESI_GROUPS = "gudang@g.us";
+process.env.ONEHUB_NOTICE_GROUPS = "gudang@g.us";
 process.env.ONEHUB_API_URL = "http://onehub.test/internal/friday";
 process.env.ONEHUB_API_TOKEN = "test-onehub-token";
 process.env.ONEHUB_DATABASE_URL = process.env.ONEHUB_TEST_DATABASE_URL ?? "postgres://nobody@127.0.0.1:1/none";
