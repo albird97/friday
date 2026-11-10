@@ -2,7 +2,7 @@ import { randomInt } from "node:crypto";
 import type { BetaToolUnion } from "@anthropic-ai/sdk/resources/beta/messages/messages.js";
 import { z } from "zod";
 import { config } from "./config.js";
-import { api, onehubAllowed } from "./onehub.js";
+import { api, onehubAllowed, onehubResiAllowed } from "./onehub.js";
 import type { ChatContext, Outbox } from "./types.js";
 
 // onehub's admin panel, driven from WhatsApp. onehub runs the panel's own pages, forms and buttons as the person's
@@ -102,8 +102,9 @@ function jsonSchema(schema: z.ZodObject) {
 }
 
 export function panelTools(chat: ChatContext): BetaToolUnion[] {
-  if (!onehubAllowed(chat) || !config.ONEHUB_API_URL) return [];
-  return TOOLS.map((t) => ({ name: t.name, description: t.description, input_schema: jsonSchema(t.schema) }));
+  if (!config.ONEHUB_API_URL) return [];
+  const tools = onehubAllowed(chat) ? TOOLS : onehubResiAllowed(chat) ? TOOLS.filter((t) => t.name === "onehub_resi") : [];
+  return tools.map((t) => ({ name: t.name, description: t.description, input_schema: jsonSchema(t.schema) }));
 }
 
 const requestedBy = (chat: ChatContext) => ({ name: chat.sender.name, number: chat.sender.number });
@@ -111,7 +112,7 @@ const requestedBy = (chat: ChatContext) => ({ name: chat.sender.name, number: ch
 /** Runs an onehub_panel_* tool. Returns undefined if `name` isn't one. */
 export async function runPanelTool(name: string, input: unknown, chat: ChatContext, outbox: Outbox): Promise<string | undefined> {
   if (!name.startsWith("onehub_panel_") && name !== "onehub_resi") return undefined;
-  if (!onehubAllowed(chat)) throw new Error("onehub isn't available in this chat.");
+  if (!(name === "onehub_resi" ? onehubResiAllowed(chat) : onehubAllowed(chat))) throw new Error("onehub isn't available in this chat.");
   if (name === "onehub_panel_pages") {
     const { search } = PagesInput.parse(input);
     return (await api<{ text: string }>("POST", "/panel/pages", { search: search ?? null, requested_by: requestedBy(chat) })).text;
@@ -147,7 +148,7 @@ async function run(input: RunInput, chat: ChatContext, outbox: Outbox): Promise<
 
 type Resi = { file_name: string; mimetype: string; caption: string; data: string };
 
-/** The label goes only to the chat that asked: onehubAllowed already limits that to the onehub people's own chats. */
+/** The label goes only to the chat that asked: an onehub person's own chat, or a group in ONEHUB_RESI_GROUPS. */
 async function resi({ order }: z.infer<typeof ResiInput>, chat: ChatContext, outbox: Outbox): Promise<string> {
   const file = await api<Resi>("POST", "/resi", { order, requested_by: requestedBy(chat) });
   const data = Buffer.from(file.data, "base64");

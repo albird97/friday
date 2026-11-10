@@ -227,7 +227,10 @@ haven't written first is what gets bot numbers flagged by WhatsApp, so keep it t
 ## Business back office (onehub)
 
 Friday can also work with onehub, the business's back-office system, for the people listed in `ONEHUB_USERS` — and
-only in their private chats (never in groups, where others read along).
+only in their private chats (never in groups, where others read along). The one exception: in the groups listed in
+`ONEHUB_RESI_GROUPS` (WhatsApp group ids, `…@g.us`), those same people can ask for an order's shipping label, which
+Friday sends into the group. Nothing else of onehub works there. Friday never makes a label itself: without
+`onehub_resi` it says it can't.
 
 - **Looking things up** ("sales today?", "stock of ABC-12", "unshipped orders as Excel"): Friday writes SQL against
   onehub's database through a PostgreSQL role that can only `SELECT`, and never sees tables or columns that role isn't
