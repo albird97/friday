@@ -235,6 +235,14 @@ only in their private chats (never in groups, where others read along).
 - **Doing things** (e.g. correcting stock): onehub's internal API lists the actions it allows. When that person asks
   for one, Friday has onehub compute its preview and then runs it straight away (no confirmation code); Friday's code,
   not Claude, sends them onehub's result and summary.
+- **Anything else in the panel** (create, edit, delete, any button on any page): `onehub_panel_pages`,
+  `onehub_panel_inspect` and `onehub_panel_run` drive onehub's own admin panel pages, forms and actions as that
+  person's onehub user, so onehub's permissions, validation and audit log apply as if they had clicked. Ordinary changes
+  run at once. Destructive ones (delete, cancel, void, bulk, anything the panel asks to confirm) wait until the person
+  replies `YA <code>` with the 4-digit code Friday sends them; Friday's code checks that reply before Claude sees it,
+  and Claude never sees the code. Codes expire after 10 minutes and work once.
+- **Shipping labels** ("kirim resi 260803ABC"): `onehub_resi` sends the resi PDF of one Shopee or TikTok/Tokopedia
+  order as a WhatsApp document, made by the same code as the panel's Cetak Resi button, as that person's onehub user.
 - **Alerts from onehub** (e.g. a Shopee buyer's chat about to pass the 12-hour reply limit): onehub posts them to
   `http://127.0.0.1:WEB_PORT/onehub/notice` with the same token (`ONEHUB_API_TOKEN`), naming who gets them, and Friday
   sends the text word for word. Only people in `ONEHUB_USERS` can receive them; only processes on the server can send

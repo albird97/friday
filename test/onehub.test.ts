@@ -5,15 +5,19 @@ import { beforeEach, describe, it } from "node:test";
 import { handleIncoming, type Incoming } from "../src/bot.js";
 import { db } from "../src/db.js";
 import { checkQuery, formatRows } from "../src/onehub.js";
+import { clearPanelConfirmations } from "../src/onehubpanel.js";
 import { runTool } from "../src/tools.js";
 import type { Outbox } from "../src/types.js";
 
 let sent: { chatId: string; text?: string }[] = [];
+let files: { chatId: string; fileName: string; mimetype: string; caption?: string; data: Buffer }[] = [];
 const outbox: Outbox = {
   async sendText(chatId, text) {
     sent.push({ chatId, text });
   },
-  async sendFile() {},
+  async sendFile(chatId, file) {
+    files.push({ chatId, ...file });
+  },
   async sendImage() {},
   async typing() {},
   chatIdFor: (n) => `${n}@s.whatsapp.net`,
@@ -43,6 +47,17 @@ globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     });
   }
   if (path === "/guide") return json(200, { guide: "Orders live in `orders`." });
+  if (path === "/panel/pages") return json(200, { text: "expenses — Expenses (Keuangan)" });
+  if (path === "/panel/inspect") return json(200, { text: `Page ${body.page}: actions delete, create` });
+  if (path === "/panel/preview") {
+    const destructive = body.action === "delete";
+    return json(200, { summary: `${destructive ? "Hapus" : "Buat"} expense ${body.record ?? body.data?.name}`, destructive, token: "panel-tok" });
+  }
+  if (path === "/resi") {
+    if (body.order === "NOPE") return json(422, { error: "Tidak ada order dengan nomor order atau nomor resi NOPE." });
+    return json(200, { file_name: `Resi ${body.order}.pdf`, mimetype: "application/pdf", caption: `Resi ${body.order} · Shopee`, data: Buffer.from("%PDF-resi").toString("base64") });
+  }
+  if (path === "/panel/execute") return json(200, { message: body.action === "delete" ? "Expense dihapus." : "Expense dibuat." });
   if (path === "/actions/adjust_stock/preview") {
     if (body.params.sku === "NOPE") return json(422, { error: "SKU NOPE tidak ditemukan." });
     return json(200, { summary: `Ubah stok ${body.params.sku}: 10 → ${body.params.new_qty}`, token: "state-abc" });
@@ -67,8 +82,10 @@ const toolNames = (body: any) => (body.tools as any[]).map((t) => t.name);
 beforeEach(() => {
   claude.reset();
   sent = [];
+  files = [];
   onehubCalls.length = 0;
   executeFails = false;
+  clearPanelConfirmations();
 });
 
 describe("onehub access", () => {
@@ -77,7 +94,7 @@ describe("onehub access", () => {
     await handleIncoming(dm(ADMIN, "hi"), outbox);
     const body = claude.requests[0].body;
     const names = toolNames(body);
-    assert.deepEqual(names.slice(-3), ["onehub_schema", "onehub_query", "onehub_adjust_stock"]);
+    assert.deepEqual(names.slice(-7), ["onehub_schema", "onehub_query", "onehub_adjust_stock", "onehub_panel_pages", "onehub_panel_inspect", "onehub_panel_run", "onehub_resi"]);
     assert.ok(names.indexOf("web_fetch") < names.indexOf("onehub_schema"));
     assert.match(JSON.stringify(body.system), /onehub/);
     assert.equal(onehubCalls[0].auth, "Bearer test-onehub-token");
@@ -148,6 +165,92 @@ describe("onehub actions", () => {
     claude.replies.push({ content: [text("Great year!")], stop_reason: "end_turn" });
     await handleIncoming(dm(WIFE, "yes 2026"), outbox);
     assert.equal(claude.requests.length, 1);
+  });
+});
+
+describe("onehub panel", () => {
+  it("offers the panel tools to allowed people", async () => {
+    claude.replies.push({ content: [text("Hi!")], stop_reason: "end_turn" });
+    await handleIncoming(dm(ADMIN, "hi"), outbox);
+    const names = toolNames(claude.requests[0].body);
+    for (const n of ["onehub_panel_pages", "onehub_panel_inspect", "onehub_panel_run"]) assert.ok(names.includes(n), n);
+  });
+
+  it("runs ordinary changes at once as the person", async () => {
+    claude.replies.push(
+      { content: [toolUse("tu_p1", "onehub_panel_run", { page: "expenses/create", action: "create", data: { name: "Lakban" } })], stop_reason: "tool_use" },
+      { content: [text("Beres.")], stop_reason: "end_turn" },
+    );
+    await handleIncoming(dm(ADMIN, "catat expense lakban"), outbox);
+    const execute = onehubCalls.find((c) => c.path === "/panel/execute");
+    assert.equal(execute?.body.token, "panel-tok");
+    assert.deepEqual(execute?.body.requested_by, { name: ADMIN.name, number: ADMIN.number });
+    assert.equal(sent.find((s) => s.text?.startsWith("✅"))?.text, "✅ Expense dibuat.\n\nBuat expense Lakban");
+  });
+
+  it("holds destructive changes until the person types the code, which Claude never sees", async () => {
+    claude.replies.push(
+      { content: [toolUse("tu_p2", "onehub_panel_run", { page: "expenses", action: "delete", record: "12" })], stop_reason: "tool_use" },
+      { content: [text("Cek kodenya ya.")], stop_reason: "end_turn" },
+    );
+    await handleIncoming(dm(ADMIN, "hapus expense 12"), outbox);
+    assert.equal(onehubCalls.some((c) => c.path === "/panel/execute"), false);
+    const ask = sent.find((s) => s.text?.startsWith("⚠️"));
+    const code = /YA (\d{4})/.exec(ask?.text ?? "")?.[1];
+    assert.ok(code);
+    assert.doesNotMatch(JSON.stringify(claude.requests[1].body), new RegExp(`YA ${code}`));
+
+    const wrong = code === "1111" ? "2222" : "1111";
+    await handleIncoming(dm(ADMIN, `ya ${wrong}`), outbox);
+    assert.equal(onehubCalls.some((c) => c.path === "/panel/execute"), false);
+    assert.match(sent.at(-1)?.text ?? "", /tidak cocok/);
+
+    await handleIncoming(dm(ADMIN, `YA ${code}`), outbox);
+    const execute = onehubCalls.find((c) => c.path === "/panel/execute");
+    assert.equal(execute?.body.record, "12");
+    assert.equal(sent.at(-1)?.text, "✅ Expense dihapus.");
+    assert.equal(claude.requests.length, 2, "the code replies never reached Claude");
+
+    // Used once.
+    claude.replies.push({ content: [text("?")], stop_reason: "end_turn" });
+    await handleIncoming(dm(ADMIN, `YA ${code}`), outbox);
+    assert.equal(onehubCalls.filter((c) => c.path === "/panel/execute").length, 1);
+  });
+
+  it("refuses panel tools outside allowed chats", async () => {
+    const result = await runTool("onehub_panel_run", { page: "expenses", action: "delete", record: "1" }, { chat: dm(WIFE, "").chat, outbox });
+    assert.equal(result.isError, true);
+    assert.equal(onehubCalls.length, 0);
+  });
+});
+
+describe("onehub resi", () => {
+  it("sends the label PDF onehub makes, as the person", async () => {
+    claude.replies.push(
+      { content: [toolUse("tu_r1", "onehub_resi", { order: "260803ABC" })], stop_reason: "tool_use" },
+      { content: [text("Ini resinya.")], stop_reason: "end_turn" },
+    );
+    await handleIncoming(dm(ADMIN, "kirim resi 260803ABC"), outbox);
+    const call = onehubCalls.find((c) => c.path === "/resi");
+    assert.deepEqual(call?.body, { order: "260803ABC", requested_by: { name: ADMIN.name, number: ADMIN.number } });
+    assert.equal(files.length, 1);
+    assert.equal(files[0].fileName, "Resi 260803ABC.pdf");
+    assert.equal(files[0].mimetype, "application/pdf");
+    assert.equal(files[0].data.toString(), "%PDF-resi");
+    assert.equal(files[0].chatId, dm(ADMIN, "").chat.chatId);
+  });
+
+  it("passes onehub's reason on when there is no label", async () => {
+    const result = await runTool("onehub_resi", { order: "NOPE" }, { chat: dm(ADMIN, "").chat, outbox });
+    assert.equal(result.isError, true);
+    assert.match(JSON.stringify(result), /NOPE/);
+    assert.equal(files.length, 0);
+  });
+
+  it("refuses outside allowed chats", async () => {
+    const result = await runTool("onehub_resi", { order: "260803ABC" }, { chat: dm(WIFE, "").chat, outbox });
+    assert.equal(result.isError, true);
+    assert.equal(onehubCalls.length, 0);
   });
 });
 

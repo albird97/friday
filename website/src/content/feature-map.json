@@ -87,7 +87,11 @@
     "set_profile_picture": "internal",
     "send_group_message": "internal",
     "onehub_schema": "internal",
-    "onehub_query": "internal"
+    "onehub_query": "internal",
+    "onehub_panel_pages": "internal",
+    "onehub_panel_inspect": "internal",
+    "onehub_panel_run": "internal",
+    "onehub_resi": "internal"
   },
   "commands": {
     "/google": "friday-11",

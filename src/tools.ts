@@ -14,6 +14,7 @@ import { chartOf } from "./market/chart.js";
 import { reportOf } from "./market/report.js";
 import { addMemory, forgetMemory, SHARED } from "./memory.js";
 import { onehubTools, runOnehubTool } from "./onehub.js";
+import { panelTools, runPanelTool } from "./onehubpanel.js";
 import { runSmartlifeTool, smartlifeTools } from "./smartlife.js";
 import { pollInChat, pollResults, savePoll } from "./polls.js";
 import { cancelReminder, createReminder, describeReminder, listReminders, MAX_TASKS } from "./reminders.js";
@@ -514,7 +515,7 @@ export const toolParams: BetaToolUnion[] = [
  */
 export async function toolsFor(chat: ChatContext): Promise<BetaToolUnion[]> {
   const admin = isAdmin(chat.sender.number) ? ADMIN_TOOLS.filter((t) => imagesEnabled || t.name !== "set_profile_picture").map(toParam) : [];
-  const extra = [...admin, ...errandTools(chat), ...(await onehubTools(chat)), ...googleTools(chat), ...spotifyTools(chat), ...shopeeTools(chat), ...smartlifeTools(chat), ...hevyTools(chat), ...groupWorkoutTools(chat)];
+  const extra = [...admin, ...errandTools(chat), ...(await onehubTools(chat)), ...panelTools(chat), ...googleTools(chat), ...spotifyTools(chat), ...shopeeTools(chat), ...smartlifeTools(chat), ...hevyTools(chat), ...groupWorkoutTools(chat)];
   return extra.length ? [...toolParams, ...extra] : toolParams;
 }
 
@@ -523,7 +524,7 @@ export async function runTool(name: string, input: unknown, ctx: ToolContext): P
   try {
     if (!t) {
       const content =
-        (await runErrandTool(name, input, ctx.chat, ctx.outbox)) ?? (await runOnehubTool(name, input, ctx.chat, ctx.outbox)) ?? (await runGoogleTool(name, input, ctx.chat, ctx.outbox)) ??
+        (await runErrandTool(name, input, ctx.chat, ctx.outbox)) ?? (await runPanelTool(name, input, ctx.chat, ctx.outbox)) ?? (await runOnehubTool(name, input, ctx.chat, ctx.outbox)) ?? (await runGoogleTool(name, input, ctx.chat, ctx.outbox)) ??
         (await runSpotifyTool(name, input, ctx.chat, ctx.outbox)) ?? (await runShopeeTool(name, input, ctx.chat, ctx.outbox)) ?? (await runSmartlifeTool(name, input, ctx.chat, ctx.outbox)) ??
         (await runHevyTool(name, input, ctx.chat, ctx.outbox)) ?? (await runGroupWorkoutTool(name, input, ctx.chat, ctx.outbox));
       return content === undefined ? { content: `Unknown tool ${name}.`, isError: true } : { content, isError: false };
