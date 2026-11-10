@@ -4,6 +4,7 @@ import { config } from "./config.js";
 import { allContacts } from "./contacts.js";
 import { finishConnect } from "./google.js";
 import { MAX_KEPT } from "./groupcontext.js";
+import { handleOnehubNotice } from "./onehub.js";
 import { finishConnect as finishShopee } from "./shopee.js";
 import { finishConnect as finishSpotify } from "./spotify.js";
 import type { Outbox } from "./types.js";
@@ -133,6 +134,10 @@ export function startWeb(outbox: Outbox): http.Server {
     // The dashboard answers everything under /admin itself: its methods, headers, cookies and errors.
     if (isAdminPath(URL.parse(req.url ?? "/", "http://localhost")?.pathname ?? "")) {
       void handleAdmin(req, res, outbox);
+      return;
+    }
+    if (URL.parse(req.url ?? "/", "http://localhost")?.pathname === "/onehub/notice") {
+      void handleOnehubNotice(req, res, outbox);
       return;
     }
     void handleWeb(req.method ?? "GET", req.url ?? "/", outbox)
