@@ -243,6 +243,11 @@ only in their private chats (never in groups, where others read along).
   and Claude never sees the code. Codes expire after 10 minutes and work once.
 - **Shipping labels** ("kirim resi 260803ABC"): `onehub_resi` sends the resi PDF of one Shopee or TikTok/Tokopedia
   order as a WhatsApp document, made by the same code as the panel's Cetak Resi button, as that person's onehub user.
+- **Alerts from onehub** (e.g. a Shopee buyer's chat about to pass the 12-hour reply limit): onehub posts them to
+  `http://127.0.0.1:WEB_PORT/onehub/notice` with the same token (`ONEHUB_API_TOKEN`), naming who gets them, and Friday
+  sends the text word for word. Only people in `ONEHUB_USERS` can receive them; only processes on the server can send
+  (nginx doesn't route `/onehub/`, and requests that came through it are refused). The web port starts for this even
+  without `PUBLIC_URL`.
 
 ## Smart Life devices at home
 

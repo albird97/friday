@@ -4,6 +4,7 @@ import { imageProvider, pruneImages } from "./images.js";
 import { hideSignalSessionDumps, keepRecentProblems } from "./logging.js";
 import { chatModels, currentModel, familyOf, latestModel, setChatModel, setModel, type Family } from "./model.js";
 import { pruneMonitor } from "./monitor.js";
+import { onehubNoticesEnabled } from "./onehub.js";
 import { startReminderLoop } from "./reminders.js";
 import { startWeb } from "./web.js";
 import { expireChatSessions, expireSession } from "./session.js";
@@ -29,7 +30,8 @@ pruneMonitor();
 setInterval(() => pruneMonitor(), 24 * 3600_000).unref();
 const outbox = await startWhatsApp((msg, out) => void handleIncoming(msg, out));
 startReminderLoop(outbox, undefined, (task) => runScheduledTask(task, outbox));
-if (config.PUBLIC_URL) startWeb(outbox);
+// The web port also takes onehub's notices, so it runs for those even without public pages.
+if (config.PUBLIC_URL || onehubNoticesEnabled) startWeb(outbox);
 onUsageAlert(async (text) => {
   const admin = config.contacts[0];
   if (admin) await outbox.sendText(outbox.chatIdFor(admin.number), text);
