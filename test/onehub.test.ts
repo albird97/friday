@@ -10,11 +10,14 @@ import { runTool } from "../src/tools.js";
 import type { Outbox } from "../src/types.js";
 
 let sent: { chatId: string; text?: string }[] = [];
+let files: { chatId: string; fileName: string; mimetype: string; caption?: string; data: Buffer }[] = [];
 const outbox: Outbox = {
   async sendText(chatId, text) {
     sent.push({ chatId, text });
   },
-  async sendFile() {},
+  async sendFile(chatId, file) {
+    files.push({ chatId, ...file });
+  },
   async sendImage() {},
   async typing() {},
   chatIdFor: (n) => `${n}@s.whatsapp.net`,
@@ -50,6 +53,10 @@ globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
     const destructive = body.action === "delete";
     return json(200, { summary: `${destructive ? "Hapus" : "Buat"} expense ${body.record ?? body.data?.name}`, destructive, token: "panel-tok" });
   }
+  if (path === "/resi") {
+    if (body.order === "NOPE") return json(422, { error: "Tidak ada order dengan nomor order atau nomor resi NOPE." });
+    return json(200, { file_name: `Resi ${body.order}.pdf`, mimetype: "application/pdf", caption: `Resi ${body.order} · Shopee`, data: Buffer.from("%PDF-resi").toString("base64") });
+  }
   if (path === "/panel/execute") return json(200, { message: body.action === "delete" ? "Expense dihapus." : "Expense dibuat." });
   if (path === "/actions/adjust_stock/preview") {
     if (body.params.sku === "NOPE") return json(422, { error: "SKU NOPE tidak ditemukan." });
@@ -75,6 +82,7 @@ const toolNames = (body: any) => (body.tools as any[]).map((t) => t.name);
 beforeEach(() => {
   claude.reset();
   sent = [];
+  files = [];
   onehubCalls.length = 0;
   executeFails = false;
   clearPanelConfirmations();
@@ -86,7 +94,7 @@ describe("onehub access", () => {
     await handleIncoming(dm(ADMIN, "hi"), outbox);
     const body = claude.requests[0].body;
     const names = toolNames(body);
-    assert.deepEqual(names.slice(-6), ["onehub_schema", "onehub_query", "onehub_adjust_stock", "onehub_panel_pages", "onehub_panel_inspect", "onehub_panel_run"]);
+    assert.deepEqual(names.slice(-7), ["onehub_schema", "onehub_query", "onehub_adjust_stock", "onehub_panel_pages", "onehub_panel_inspect", "onehub_panel_run", "onehub_resi"]);
     assert.ok(names.indexOf("web_fetch") < names.indexOf("onehub_schema"));
     assert.match(JSON.stringify(body.system), /onehub/);
     assert.equal(onehubCalls[0].auth, "Bearer test-onehub-token");
@@ -211,6 +219,36 @@ describe("onehub panel", () => {
 
   it("refuses panel tools outside allowed chats", async () => {
     const result = await runTool("onehub_panel_run", { page: "expenses", action: "delete", record: "1" }, { chat: dm(WIFE, "").chat, outbox });
+    assert.equal(result.isError, true);
+    assert.equal(onehubCalls.length, 0);
+  });
+});
+
+describe("onehub resi", () => {
+  it("sends the label PDF onehub makes, as the person", async () => {
+    claude.replies.push(
+      { content: [toolUse("tu_r1", "onehub_resi", { order: "260803ABC" })], stop_reason: "tool_use" },
+      { content: [text("Ini resinya.")], stop_reason: "end_turn" },
+    );
+    await handleIncoming(dm(ADMIN, "kirim resi 260803ABC"), outbox);
+    const call = onehubCalls.find((c) => c.path === "/resi");
+    assert.deepEqual(call?.body, { order: "260803ABC", requested_by: { name: ADMIN.name, number: ADMIN.number } });
+    assert.equal(files.length, 1);
+    assert.equal(files[0].fileName, "Resi 260803ABC.pdf");
+    assert.equal(files[0].mimetype, "application/pdf");
+    assert.equal(files[0].data.toString(), "%PDF-resi");
+    assert.equal(files[0].chatId, dm(ADMIN, "").chat.chatId);
+  });
+
+  it("passes onehub's reason on when there is no label", async () => {
+    const result = await runTool("onehub_resi", { order: "NOPE" }, { chat: dm(ADMIN, "").chat, outbox });
+    assert.equal(result.isError, true);
+    assert.match(JSON.stringify(result), /NOPE/);
+    assert.equal(files.length, 0);
+  });
+
+  it("refuses outside allowed chats", async () => {
+    const result = await runTool("onehub_resi", { order: "260803ABC" }, { chat: dm(WIFE, "").chat, outbox });
     assert.equal(result.isError, true);
     assert.equal(onehubCalls.length, 0);
   });

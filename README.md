@@ -241,6 +241,8 @@ only in their private chats (never in groups, where others read along).
   run at once. Destructive ones (delete, cancel, void, bulk, anything the panel asks to confirm) wait until the person
   replies `YA <code>` with the 4-digit code Friday sends them; Friday's code checks that reply before Claude sees it,
   and Claude never sees the code. Codes expire after 10 minutes and work once.
+- **Shipping labels** ("kirim resi 260803ABC"): `onehub_resi` sends the resi PDF of one Shopee or TikTok/Tokopedia
+  order as a WhatsApp document, made by the same code as the panel's Cetak Resi button, as that person's onehub user.
 
 ## Smart Life devices at home
 

@@ -29,6 +29,9 @@ const InspectInput = z.object({
   page: z.string().min(1).describe("Page id from onehub_panel_pages, e.g. 'orders', 'expenses/create', 'packing-station'."),
   record: z.string().optional().describe("Record key (id) for pages or row actions about one record, e.g. an order id."),
 });
+const ResiInput = z.object({
+  order: z.string().min(1).max(64).describe("The marketplace order number (e.g. Shopee order SN) or the shipping tracking number."),
+});
 const RunInput = z.object({
   page: z.string().min(1).describe("Page id from onehub_panel_pages."),
   action: z
@@ -83,6 +86,14 @@ const TOOLS = [
       "don't ask them to confirm yourself. Only use it for what this person asked for in their own message, one at a time.",
     schema: RunInput,
   },
+  {
+    name: "onehub_resi",
+    description:
+      "Send this person the shipping label (resi) PDF of one Shopee or TikTok/Tokopedia order as a WhatsApp document, " +
+      "made the same way as the panel's Cetak Resi button. Pass the order number or the tracking number. If the label " +
+      "doesn't exist yet onehub creates the shipping document at the marketplace, like that button does.",
+    schema: ResiInput,
+  },
 ];
 
 function jsonSchema(schema: z.ZodObject) {
@@ -99,7 +110,7 @@ const requestedBy = (chat: ChatContext) => ({ name: chat.sender.name, number: ch
 
 /** Runs an onehub_panel_* tool. Returns undefined if `name` isn't one. */
 export async function runPanelTool(name: string, input: unknown, chat: ChatContext, outbox: Outbox): Promise<string | undefined> {
-  if (!name.startsWith("onehub_panel_")) return undefined;
+  if (!name.startsWith("onehub_panel_") && name !== "onehub_resi") return undefined;
   if (!onehubAllowed(chat)) throw new Error("onehub isn't available in this chat.");
   if (name === "onehub_panel_pages") {
     const { search } = PagesInput.parse(input);
@@ -110,6 +121,7 @@ export async function runPanelTool(name: string, input: unknown, chat: ChatConte
     return (await api<{ text: string }>("POST", "/panel/inspect", { ...body, requested_by: requestedBy(chat) })).text;
   }
   if (name === "onehub_panel_run") return run(RunInput.parse(input), chat, outbox);
+  if (name === "onehub_resi") return resi(ResiInput.parse(input), chat, outbox);
   throw new Error(`Unknown onehub panel tool ${name}.`);
 }
 
@@ -131,6 +143,16 @@ async function run(input: RunInput, chat: ChatContext, outbox: Outbox): Promise<
     "Nothing has run yet: this is destructive, so the person was sent onehub's summary and a code to type. When they reply " +
     "with it, Friday runs it and tells them the result. Don't repeat the summary or ask for the code; one short line at most."
   );
+}
+
+type Resi = { file_name: string; mimetype: string; caption: string; data: string };
+
+/** The label goes only to the chat that asked: onehubAllowed already limits that to the onehub people's own chats. */
+async function resi({ order }: z.infer<typeof ResiInput>, chat: ChatContext, outbox: Outbox): Promise<string> {
+  const file = await api<Resi>("POST", "/resi", { order, requested_by: requestedBy(chat) });
+  const data = Buffer.from(file.data, "base64");
+  await outbox.sendFile(chat.chatId, { data, fileName: file.file_name, mimetype: file.mimetype, caption: file.caption });
+  return `Sent ${file.file_name} (${Math.ceil(data.length / 1024)} KB). Don't repeat it; one short line at most.`;
 }
 
 async function execute(input: RunInput, preview: Preview, chat: ChatContext): Promise<string> {
