@@ -38,6 +38,9 @@ const Env = z.object({
   // Groups (WhatsApp ids, "…@g.us") where those people may also ask for an order's shipping label with onehub_resi.
   // Nothing else of onehub works there, and everyone in the group sees the label.
   ONEHUB_RESI_GROUPS: z.string().default(""),
+  // Groups (WhatsApp ids, "…@g.us") onehub may post its notices into, e.g. the warehouse group that gets each courier
+  // handover sheet. onehub names the group by this id; a group that isn't listed here never gets one.
+  ONEHUB_NOTICE_GROUPS: z.string().default(""),
   // Read access: a PostgreSQL URL for a role that can only SELECT, e.g. postgres://friday_ro:…@127.0.0.1:5432/onehub
   ONEHUB_DATABASE_URL: z.string().default(""),
   // Actions: onehub's internal Friday API (…/internal/friday) and its token.
@@ -114,6 +117,7 @@ export const config = {
   pairingNumber: env.PAIRING_NUMBER.replace(/\D/g, ""),
   onehubUsers: env.ONEHUB_USERS.split(",").map((n) => n.replace(/\D/g, "")).filter(Boolean),
   onehubResiGroups: env.ONEHUB_RESI_GROUPS.split(",").map((g) => g.trim()).filter(Boolean),
+  onehubNoticeGroups: env.ONEHUB_NOTICE_GROUPS.split(",").map((g) => g.trim()).filter(Boolean),
   errandUsers: env.ERRAND_USERS.split(",").map((n) => n.replace(/\D/g, "")).filter(Boolean),
   tuyaUsers: env.TUYA_USERS.split(",").map((n) => n.replace(/\D/g, "")).filter(Boolean),
   switchUsers: env.SWITCH_USERS.split(",").map((n) => n.replace(/\D/g, "")).filter(Boolean),
