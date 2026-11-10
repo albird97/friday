@@ -91,7 +91,7 @@ type ActionInfo = { name: string; description: string; input_schema: { type: "ob
 
 let actions: { list: ActionInfo[]; at: number } | undefined;
 
-async function api<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
+export async function api<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<T> {
   if (!config.ONEHUB_API_URL) throw new Error("onehub's actions aren't connected. (Admin: set ONEHUB_API_URL.)");
   const res = await fetch(`${config.ONEHUB_API_URL.replace(/\/$/, "")}${path}`, {
     method,

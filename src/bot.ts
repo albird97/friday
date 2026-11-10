@@ -18,6 +18,7 @@ import { connectMessage, disconnect, googleAccount, googleAllowed, googleEnabled
 import { cancelLink, connectMessage as shopeeConnectMessage, disconnectShopee, shopeeAllowed, shopeeEnabled, shopeeShops } from "./shopee.js";
 import { connectMessage as spotifyConnectMessage, disconnectSpotify, share, sharesOf, spotifyAccount, spotifyAllowed, spotifyEnabled, unshare } from "./spotify.js";
 import { connectHevy, connectMessage as hevyConnectMessage, disconnectHevy, hevyAccount, hevyAllowed, hevyEnabled, HevyError, isBareKey, isKeyShaped, KEY_PAGE } from "./hevy.js";
+import { confirmPanel } from "./onehubpanel.js";
 import { contextOn, groupContextNote, MAX_KEPT, rememberGroupMessage, setContext } from "./groupcontext.js";
 import { answerGroupInvite, groupWorkoutNote, leaveGroupWorkouts } from "./groupworkout.js";
 import { recordTool } from "./monitor.js";
@@ -140,6 +141,8 @@ async function processMessage(msg: Incoming, outbox: Outbox): Promise<void> {
   // A Hevy key pasted on its own: treated as `/hevy <key>`, so it never reaches Claude.
   if (isBareKey(chat, msg.text)) return linkHevy(chat, msg.text.trim(), (text) => outbox.sendText(chat.chatId, text, chat.replyTo));
   if (await answerGroupInvite(chat, msg.text, outbox)) return;
+  // "YA 1234" for a destructive onehub change is checked by code, never by Claude.
+  if (await confirmPanel(chat, msg.text, outbox)) return;
 
   if (!takeDailyQuota(chat.sender.number)) {
     await outbox.sendText(chat.chatId, `You've reached today's limit of ${config.DAILY_MESSAGE_LIMIT} messages. Talk tomorrow! 👋`, chat.replyTo);
