@@ -72,8 +72,8 @@ const chatOf = (who: { name: string; number: string }) => `${who.number}@s.whats
 function dm(from: { name: string; number: string }, text: string): Incoming {
   return { chat: { chatId: chatOf(from), isGroup: false, chatName: from.name, sender: { ...from, isContact: true } }, text, addressed: true };
 }
-function inGroup(from: { name: string; number: string }, text: string): Incoming {
-  return { chat: { chatId: "family@g.us", isGroup: true, chatName: "Family", sender: { ...from, isContact: true } }, text, addressed: true };
+function inGroup(from: { name: string; number: string }, text: string, chatId = "family@g.us"): Incoming {
+  return { chat: { chatId, isGroup: true, chatName: chatId === "family@g.us" ? "Family" : "Gudang", sender: { ...from, isContact: true } }, text, addressed: true };
 }
 const text = (t: string) => ({ type: "text", text: t });
 const toolUse = (id: string, name: string, input: unknown) => ({ type: "tool_use", id, name, input });
@@ -251,6 +251,41 @@ describe("onehub resi", () => {
     const result = await runTool("onehub_resi", { order: "260803ABC" }, { chat: dm(WIFE, "").chat, outbox });
     assert.equal(result.isError, true);
     assert.equal(onehubCalls.length, 0);
+  });
+
+  it("is the only onehub tool offered in a group from ONEHUB_RESI_GROUPS", async () => {
+    claude.replies.push({ content: [text("Siap")], stop_reason: "end_turn" });
+    await handleIncoming(inGroup(ADMIN, "Friday, resi 260803ABC", "gudang@g.us"), outbox);
+    const body = claude.requests[0].body;
+    assert.deepEqual(toolNames(body).filter((n: string) => n.startsWith("onehub_")), ["onehub_resi"]);
+    assert.match(JSON.stringify(body.system), /onehub_resi/);
+    assert.doesNotMatch(JSON.stringify(body.system), /onehub_query/);
+  });
+
+  it("sends the label into that group, but only for ONEHUB_USERS", async () => {
+    const result = await runTool("onehub_resi", { order: "260803ABC" }, { chat: inGroup(ADMIN, "", "gudang@g.us").chat, outbox });
+    assert.equal(result.isError, false);
+    assert.equal(files.length, 1);
+    assert.equal(files[0].chatId, "gudang@g.us");
+
+    const stranger = await runTool("onehub_resi", { order: "260803ABC" }, { chat: inGroup(WIFE, "", "gudang@g.us").chat, outbox });
+    assert.equal(stranger.isError, true);
+    assert.equal(files.length, 1);
+  });
+
+  it("keeps the rest of onehub out of that group", async () => {
+    const chat = inGroup(ADMIN, "", "gudang@g.us").chat;
+    for (const [name, input] of [["onehub_panel_pages", {}], ["onehub_adjust_stock", { sku: "A", new_qty: 1 }]] as const) {
+      const result = await runTool(name, input, { chat, outbox });
+      assert.equal(result.isError, true, name);
+    }
+    assert.equal(onehubCalls.some((c) => c.path !== "/actions"), false);
+  });
+
+  it("refuses the label in other groups", async () => {
+    const result = await runTool("onehub_resi", { order: "260803ABC" }, { chat: inGroup(ADMIN, "").chat, outbox });
+    assert.equal(result.isError, true);
+    assert.equal(files.length, 0);
   });
 });
 

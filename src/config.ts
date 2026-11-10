@@ -35,6 +35,9 @@ const Env = z.object({
   LOG_LEVEL: z.string().default("info"),
   // onehub (the business back office). Numbers that may use it, in private chats only: "6281234567890,6289876543210".
   ONEHUB_USERS: z.string().default(""),
+  // Groups (WhatsApp ids, "…@g.us") where those people may also ask for an order's shipping label with onehub_resi.
+  // Nothing else of onehub works there, and everyone in the group sees the label.
+  ONEHUB_RESI_GROUPS: z.string().default(""),
   // Read access: a PostgreSQL URL for a role that can only SELECT, e.g. postgres://friday_ro:…@127.0.0.1:5432/onehub
   ONEHUB_DATABASE_URL: z.string().default(""),
   // Actions: onehub's internal Friday API (…/internal/friday) and its token.
@@ -110,6 +113,7 @@ export const config = {
   contacts: parseContacts(env.ALLOWED_CONTACTS),
   pairingNumber: env.PAIRING_NUMBER.replace(/\D/g, ""),
   onehubUsers: env.ONEHUB_USERS.split(",").map((n) => n.replace(/\D/g, "")).filter(Boolean),
+  onehubResiGroups: env.ONEHUB_RESI_GROUPS.split(",").map((g) => g.trim()).filter(Boolean),
   errandUsers: env.ERRAND_USERS.split(",").map((n) => n.replace(/\D/g, "")).filter(Boolean),
   tuyaUsers: env.TUYA_USERS.split(",").map((n) => n.replace(/\D/g, "")).filter(Boolean),
   switchUsers: env.SWITCH_USERS.split(",").map((n) => n.replace(/\D/g, "")).filter(Boolean),

@@ -9,7 +9,7 @@ import { googleAccount, googleAllowed, googleEnabled } from "./google.js";
 import { hevyAccount, hevyAllowed, hevyEnabled } from "./hevy.js";
 import { shopeeAllowed, shopeeShops } from "./shopee.js";
 import { spotifyAccount, spotifyAllowed } from "./spotify.js";
-import { onehubAllowed } from "./onehub.js";
+import { onehubAllowed, onehubResiAllowed } from "./onehub.js";
 import { smartlifeAllowed } from "./smartlife.js";
 import { STYLES, styleOf } from "./styles.js";
 import type { BetaTextBlockParam } from "@anthropic-ai/sdk/resources/beta/messages/messages.js";
@@ -43,7 +43,9 @@ When there's nothing worth telling the chat — a check that finds no votes or n
 last time it ran already said — reply exactly ${SKIP} and nothing is sent. Never post "nothing yet" updates.
 - Documents: when someone wants a file (PDF, Word, Excel, slides, CSV…), make it with create_document, \
 create_spreadsheet or create_presentation. The file is sent automatically; your reply should just be a one-line note. \
-Write documents properly — complete, well-structured, ready to use. Default to PDF when no format is given.
+Write documents properly — complete, well-structured, ready to use. Default to PDF when no format is given. \
+Never make a shipping label (resi, AWB) or anything that passes for one: a label comes only from the marketplace, \
+and a home-made one gets packages sent wrong. If you have no tool that fetches the real one here, say so in one line.
 - Web: use web_search for anything current or factual you aren't sure of (news, weather, prices, opening hours, \
 exchange rates, sports) and web_fetch to read a specific page. Mention sources briefly when it helps.
 - Memory: use remember for lasting facts or preferences people share or ask you to keep. Use forget when asked.
@@ -74,6 +76,11 @@ is ambiguous, make a sensible attempt first, then offer to adjust.
 `;
 const IMAGES_OFF = `- You can't create or edit pictures right now (not set up); say so if asked.
 `;
+
+const ONEHUB_RESI = `# onehub shipping labels
+When someone asks for the resi / label of an order, send it with onehub_resi (order number or tracking number); it \
+arrives in this chat as a PDF document. It's the only part of onehub here: for anything else in onehub, they can ask \
+you in a private chat.`;
 
 const ONEHUB = `# onehub (the family business's back office)
 You can use onehub, the business's back-office system (marketplace orders, stock, packing, returns, purchasing, \
@@ -251,6 +258,7 @@ kindly that questions about ${name}'s settings and privacy are best asked to ${a
   }
   if (errandsAllowed(chat)) sections.push(ERRANDS(chat.sender.name));
   if (onehubAllowed(chat)) sections.push(ONEHUB);
+  else if (onehubResiAllowed(chat)) sections.push(ONEHUB_RESI);
   if (smartlifeAllowed(chat)) sections.push(SMARTLIFE);
   if (googleAllowed(chat)) {
     const account = googleAccount(chat.sender.number);

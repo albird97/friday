@@ -12,11 +12,22 @@ import type { ChatContext, Outbox } from "./types.js";
 // onehub is the family business's back office. Friday can read its database through a read-only role, and run a
 // few actions through onehub's own internal API, straight away; the person is sent onehub's own account of what it
 // did. Only the numbers in ONEHUB_USERS get any of this, and only in private chats: in groups other people's messages are in the conversation and every reply is public.
+// The one exception is the shipping label (onehub_resi) in the groups listed in ONEHUB_RESI_GROUPS: a label is meant
+// to be passed around the warehouse, and it's still asked for by, and made as, one of the ONEHUB_USERS.
 
 export const onehubEnabled = config.onehubUsers.length > 0 && Boolean(config.ONEHUB_DATABASE_URL || config.ONEHUB_API_URL);
 
 export function onehubAllowed(chat: ChatContext): boolean {
   return onehubEnabled && !chat.isGroup && config.onehubUsers.includes(chat.sender.number);
+}
+
+/** Just onehub_resi: wherever onehubAllowed, and also in ONEHUB_RESI_GROUPS for the same people. */
+export function onehubResiAllowed(chat: ChatContext): boolean {
+  return (
+    onehubEnabled &&
+    config.onehubUsers.includes(chat.sender.number) &&
+    (!chat.isGroup || config.onehubResiGroups.includes(chat.chatId))
+  );
 }
 
 // --- Reading -------------------------------------------------------------------------------------------------------
