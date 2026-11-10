@@ -235,6 +235,11 @@ only in their private chats (never in groups, where others read along).
 - **Doing things** (e.g. correcting stock): onehub's internal API lists the actions it allows. When that person asks
   for one, Friday has onehub compute its preview and then runs it straight away (no confirmation code); Friday's code,
   not Claude, sends them onehub's result and summary.
+- **Alerts from onehub** (e.g. a Shopee buyer's chat about to pass the 12-hour reply limit): onehub posts them to
+  `http://127.0.0.1:WEB_PORT/onehub/notice` with the same token (`ONEHUB_API_TOKEN`), naming who gets them, and Friday
+  sends the text word for word. Only people in `ONEHUB_USERS` can receive them; only processes on the server can send
+  (nginx doesn't route `/onehub/`, and requests that came through it are refused). The web port starts for this even
+  without `PUBLIC_URL`.
 
 ## Smart Life devices at home
 

@@ -1,7 +1,10 @@
 import type { BetaToolUnion } from "@anthropic-ai/sdk/resources/beta/messages/messages.js";
+import type http from "node:http";
 import pg from "pg";
 import { z } from "zod";
+import { sameSecret } from "./admin/auth.js";
 import { config } from "./config.js";
+import { findContact } from "./contacts.js";
 import { db } from "./db.js";
 import { clip } from "./format.js";
 import type { ChatContext, Outbox } from "./types.js";
@@ -199,4 +202,84 @@ function formatRowsOf(result: pg.QueryArrayResult): string {
     result.fields.map((f) => f.name),
     result.rows,
   );
+}
+
+// --- Notices from onehub -------------------------------------------------------------------------------------------
+
+// onehub pushes alerts it can't wait for anyone to ask about (a buyer's chat about to pass Shopee's 12-hour reply
+// limit) to the people in ONEHUB_USERS, word for word. It calls Friday's local web port with the same token Friday
+// uses to call onehub, so there's no new secret to keep. nginx doesn't route /onehub/ to Friday, and anything that
+// still arrives through it (it adds X-Forwarded-Proto) is refused: only processes on this server can send.
+
+export const onehubNoticesEnabled = Boolean(config.ONEHUB_API_TOKEN) && config.onehubUsers.length > 0;
+
+const NoticeInput = z.object({
+  to: z.array(z.string().min(1)).min(1).max(10),
+  text: z.string().trim().min(1).max(4000),
+});
+
+const NOTICE_MAX_BODY = 16 * 1024;
+
+type NoticeAnswer = { status: number; body: Record<string, unknown> };
+
+/** Checks and delivers one notice. Recipients outside ONEHUB_USERS are skipped, never messaged. */
+export async function deliverOnehubNotice(
+  headers: http.IncomingHttpHeaders,
+  rawBody: string,
+  outbox: Outbox,
+): Promise<NoticeAnswer> {
+  if (!onehubNoticesEnabled || headers["x-forwarded-proto"] !== undefined || headers["x-real-ip"] !== undefined) {
+    return { status: 404, body: { error: "not found" } };
+  }
+  const auth = String(headers.authorization ?? "");
+  if (!auth.startsWith("Bearer ") || !sameSecret(auth.slice("Bearer ".length), config.ONEHUB_API_TOKEN)) {
+    return { status: 401, body: { error: "unauthorized" } };
+  }
+  let input: z.infer<typeof NoticeInput>;
+  try {
+    input = NoticeInput.parse(JSON.parse(rawBody));
+  } catch {
+    return { status: 422, body: { error: "Send JSON: {\"to\": [\"name or number\"], \"text\": \"…\"}." } };
+  }
+
+  const sent: string[] = [];
+  const skipped: string[] = [];
+  const seen = new Set<string>();
+  for (const who of input.to) {
+    const contact = findContact(who);
+    if (!contact || !config.onehubUsers.includes(contact.number)) {
+      skipped.push(who);
+      continue;
+    }
+    if (seen.has(contact.number)) continue;
+    seen.add(contact.number);
+    await outbox.sendText(outbox.chatIdFor(contact.number), input.text);
+    sent.push(contact.name);
+  }
+  if (skipped.length) console.error(`onehub notice: not in ONEHUB_USERS, skipped: ${skipped.join(", ")}`);
+  if (!sent.length) return { status: 422, body: { error: "None of the recipients may receive onehub notices.", skipped } };
+  return { status: 200, body: { sent, skipped } };
+}
+
+/** POST /onehub/notice on Friday's local web port. */
+export async function handleOnehubNotice(req: http.IncomingMessage, res: http.ServerResponse, outbox: Outbox): Promise<void> {
+  const answer = (a: NoticeAnswer) => {
+    res.writeHead(a.status, { "Content-Type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify(a.body));
+  };
+  if (req.method !== "POST") return answer({ status: 405, body: { error: "POST only" } });
+  // Read to the end even past the limit, so the answer isn't destroyed with the request.
+  let size = 0;
+  const chunks: Buffer[] = [];
+  for await (const chunk of req as AsyncIterable<Buffer>) {
+    size += chunk.length;
+    if (size <= NOTICE_MAX_BODY) chunks.push(chunk);
+  }
+  if (size > NOTICE_MAX_BODY) return answer({ status: 413, body: { error: "too large" } });
+  try {
+    answer(await deliverOnehubNotice(req.headers, Buffer.concat(chunks).toString("utf8"), outbox));
+  } catch (err) {
+    console.error("onehub notice failed:", err instanceof Error ? err.message : "unknown error");
+    answer({ status: 502, body: { error: "WhatsApp didn't take the message." } });
+  }
 }
